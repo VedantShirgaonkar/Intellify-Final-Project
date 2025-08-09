@@ -23,9 +23,9 @@ class HungarianMatcher(nn.Module):
         assert weight_dict.get('class_weighting') != None and weight_dict.get('bbox_weighting')  != None and weight_dict.get('giou_weighting')  != None, "Weight dict must contain weighting for all three losses, giou, class and bbox."
         assert weight_dict.get('class_weighting') != 0 or weight_dict.get('bbox_weighting')  != 0 or weight_dict.get('giou_weighting')  != 0, "All loss weights cant be 0."
 
-        self.class_weighting = weight_dict.get('class_weighting') 
-        self.bbox_weighting = weight_dict.get('bbox_weighting') 
-        self.giou_weighting = weight_dict.get('giou_weighting') 
+        self.register_buffer('class_weighting', torch.tensor(weight_dict.get('class_weighting')))
+        self.register_buffer('bbox_weighting', torch.tensor(weight_dict.get('bbox_weighting')))
+        self.register_buffer('giou_weighting', torch.tensor(weight_dict.get('giou_weighting'))) 
 
     @torch.no_grad()
     def forward(self, yhat, y):

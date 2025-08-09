@@ -8,6 +8,7 @@ from utils.logger import get_logger
 from utils.rich_handlers import TrainingHandler, rich_training_context
 import sys 
 import torch
+import os
 from utils.boxes import stacker
 
 if __name__ == '__main__': 
@@ -15,28 +16,46 @@ if __name__ == '__main__':
     logger = get_logger("training")
     logger.print_banner()
     
+    # Set up GPU device
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    logger.info(f"Using device: {device}")
+    
+    if torch.cuda.is_available():
+        logger.info(f"GPU Device: {torch.cuda.get_device_name()}")
+        logger.info(f"GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.2f} GB")
+        logger.info(f"CUDA Version: {torch.version.cuda}")
+    
+    # Enable cuDNN autotuner for better performance
+    torch.backends.cudnn.benchmark = True
+    
     train_dataset = DETRData('data/train') 
-    train_dataloader = DataLoader(train_dataset, batch_size=4, collate_fn=stacker, drop_last=True) 
+    train_dataloader = DataLoader(train_dataset, batch_size=4, collate_fn=stacker, drop_last=True, pin_memory=True) 
 
     test_dataset = DETRData('data/test', train=False) 
-    test_dataloader = DataLoader(test_dataset, batch_size=4, collate_fn=stacker, drop_last=True) 
+    test_dataloader = DataLoader(test_dataset, batch_size=4, collate_fn=stacker, drop_last=True, pin_memory=True) 
 
     num_classes = 27
     model = DETR(num_classes=num_classes)
-    model.load_pretrained('pretrained/4426_model.pt')
+    # Move model to GPU
+    model = model.to(device)
+    # model.load_pretrained('pretrained/4426_model.pt')  # Commented out due to class count mismatch
     model.log_model_info()
     model.train() 
 
     opt = optim.Adam(model.parameters(), lr=1e-5)
     scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(opt, len(train_dataloader)*30, T_mult=2)
 
-    weights= {'class_weighting': 1, 'bbox_weighting': 5, 'giou_weighting': 2}
-    matcher = HungarianMatcher(weights)
-    criterion = DETRLoss(num_classes=num_classes, matcher=matcher, weight_dict=weights, eos_coef=0.1)
+    # Initialize loss-related components on the correct device
+    weights = {'class_weighting': 1, 'bbox_weighting': 5, 'giou_weighting': 2}
+    matcher = HungarianMatcher(weights).to(device)
+    criterion = DETRLoss(num_classes=num_classes, matcher=matcher, weight_dict=weights, eos_coef=0.1).to(device)
 
     train_batches = len(train_dataloader)
     test_batches = len(test_dataloader)
-    epochs = 100
+    epochs = 1000
+    
+    # Create checkpoints directory if it doesn't exist
+    os.makedirs("checkpoints", exist_ok=True)
     
     # Log training configuration
     training_config = {
@@ -62,6 +81,13 @@ if __name__ == '__main__':
                 # Create progress bar for current epoch
                 for batch_idx, batch in enumerate(train_dataloader): 
                     X, y = batch
+                    # Move batch to GPU
+                    X = X.to(device)
+                    # Move target tensors to GPU
+                    for t in y:
+                        for k, v in t.items():
+                            if isinstance(v, torch.Tensor):
+                                t[k] = v.to(device, dtype=torch.float32 if k == 'boxes' else torch.long)
                     try: 
                         yhat = model(X) 
                         yhat_classes = yhat['pred_logits'] 
@@ -100,6 +126,13 @@ if __name__ == '__main__':
                 with torch.no_grad():
                     for batch_idx, batch in enumerate(test_dataloader):
                         X, y = batch
+                        # Move batch to GPU
+                        X = X.to(device)
+                        # Move target tensors to GPU
+                        for t in y:
+                            for k, v in t.items():
+                                if isinstance(v, torch.Tensor):
+                                    t[k] = v.to(device, dtype=torch.float32 if k == 'boxes' else torch.long)
                         yhat = model(X)
                         loss_dict = criterion(yhat, y) 
                         weight_dict = criterion.weight_dict
