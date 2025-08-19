@@ -51,6 +51,16 @@ def index():
     # Option 1: Serve from templates folder (default)
     return render_template('index.html')
 
+@app.route('/about')
+def about():
+    """Serve the about page"""
+    return render_template('about.html')
+
+@app.route('/learn')
+def learn():
+    """Serve the learn page"""
+    return render_template('learn.html')
+
 @app.route('/process', methods=['POST'])
 def process_video():
     try:

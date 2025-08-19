@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Learn Sign Language - Sign Language Translator</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</head>
+
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>Learn Sign Language</h1>
+            <p>Practice and improve your sign language skills</p>
+        </header>
+
+        <main class="main-content">
+            <div class="panel single-panel">
+                <div class="learn-content">
+                    <div class="getting-started-container">
+                        <h2>Getting Started</h2>
+                        <p>Welcome to our sign language learning platform. Here you can practice basic signs and improve your skills.</p>
+                    </div>
+                    
+                    <div class="lesson-grid">
+                        <div class="lesson-card">
+                            <h3>Basic Alphabet</h3>
+                            <p>Learn the fundamental signs for each letter of the alphabet.</p>
+                            <button class="lesson-button" onclick="openVideoModal('alphabet', 'Basic Alphabet', 'https://www.youtube.com/embed/tkMg8g8vVUo')">Start Lesson</button>
+                        </div>
+                        
+                        <div class="lesson-card">
+                            <h3>Common Words</h3>
+                            <p>Practice everyday words and phrases in sign language.</p>
+                            <button class="lesson-button" onclick="openVideoModal('words', 'Common Words', 'https://www.youtube.com/embed/v1desDduz5M')">Start Lesson</button>
+                        </div>
+                        
+                        <div class="lesson-card">
+                            <h3>Numbers</h3>
+                            <p>Master counting and number signs from 1 to 100.</p>
+                            <button class="lesson-button" onclick="openVideoModal('numbers', 'Numbers', 'https://www.youtube.com/embed/eVUIqrNgU8s')">Start Lesson</button>
+                        </div>
+                        
+                        <div class="lesson-card">
+                            <h3>Greetings</h3>
+                            <p>Learn how to greet people and introduce yourself.</p>
+                            <button class="lesson-button" onclick="openVideoModal('greetings', 'Greetings', 'https://www.youtube.com/embed/LESaD65xqf8')">Start Lesson</button>
+                        </div>
+                    </div>
+                    
+                    <h2>Practice Tips</h2>
+                    <ul>
+                        <li>Practice regularly for better muscle memory</li>
+                        <li>Pay attention to hand shape, movement, and facial expressions</li>
+                        <li>Start with slow movements and gradually increase speed</li>
+                        <li>Use our translator to check your signs</li>
+                    </ul>
+                </div>
+            </div>
+        </main>
+
+        <footer class="footer">
+            <div class="navigation-buttons" style="text-align: center;">
+                <button class="nav-button" onclick="window.location.href='/'">Back to Home</button>
+                <button class="nav-button" onclick="window.location.href='/about'">About Us</button>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Video Modal -->
+    <div id="videoModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modalTitle">Lesson Video</h2>
+                <span class="close" onclick="closeVideoModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <iframe id="modalVideo" width="100%" height="480" src="" 
+                    frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                    allowfullscreen></iframe>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function openVideoModal(lessonType, title, videoUrl) {
+            const modal = document.getElementById('videoModal');
+            const modalTitle = document.getElementById('modalTitle');
+            const modalVideo = document.getElementById('modalVideo');
+            
+            modalTitle.textContent = title + ' - ASL Lesson';
+            modalVideo.src = videoUrl;
+            modal.style.display = 'block';
+        }
+
+        function closeVideoModal() {
+            const modal = document.getElementById('videoModal');
+            const modalVideo = document.getElementById('modalVideo');
+            
+            modal.style.display = 'none';
+            modalVideo.src = ''; // Stop the video
+        }
+
+        // Close modal when clicking outside of it
+        window.onclick = function(event) {
+            const modal = document.getElementById('videoModal');
+            if (event.target === modal) {
+                closeVideoModal();
+            }
+        }
+
+        // Close modal with Escape key
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'Escape') {
+                closeVideoModal();
+            }
+        });
+    </script>
+</body>
+
+</html>
