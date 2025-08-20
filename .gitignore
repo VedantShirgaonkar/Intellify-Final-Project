@@ -6,3 +6,4 @@ ASL-Implementation/asl_dataset/
 *.ipynb_checkpoints
 videos/
 .gitignore
+.env
