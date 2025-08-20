@@ -11,23 +11,28 @@ let videoStream = null;
         // Wait for the page to load before initializing MediaPipe
         window.addEventListener('load', async function() {
             await initializeMediaPipe();
-            
-            // Load voices initially
-            loadVoices();
 
-            // Some browsers load voices asynchronously
-            speechSynthesis.addEventListener('voiceschanged', loadVoices);
+            // Load voices for testing
+            loadVoicesForTesting();
+            speechSynthesis.addEventListener('voiceschanged', loadVoicesForTesting);
 
-            // Set up language dropdown functionality
-            document.querySelectorAll('.dropdown-item').forEach(item => {
-                if (item.parentElement.parentElement.querySelector('#languageButton')) {
-                    item.addEventListener('click', function () {
-                        document.getElementById('languageButton').textContent = this.textContent;
-                        // Reload voices when language changes
-                        setTimeout(loadVoices, 100);
-                    });
-                }
-            });
+            // Set up test phrase dropdown
+            const testPhrases = document.getElementById('testPhrases');
+            if (testPhrases) {
+                testPhrases.addEventListener('change', function() {
+                    if (this.value) {
+                        document.getElementById('detectedText').textContent = this.value;
+                        document.getElementById('confidence-value').textContent = '95%';
+                        document.getElementById('confidence-fill').style.width = '95%';
+                    }
+                });
+            }
+
+            // Set up play audio button
+            const playAudioButton = document.getElementById('play-audio');
+            if (playAudioButton) {
+                playAudioButton.addEventListener('click', processAndSpeak);
+            }
         });
 
         async function initializeMediaPipe() {
@@ -364,6 +369,10 @@ let videoStream = null;
         function loadVoices() {
             availableVoices = speechSynthesis.getVoices();
             const voiceMenu = document.getElementById('voiceMenu');
+            const voiceButton = document.getElementById('voiceButton');
+            
+            if (!voiceMenu) return;
+            
             voiceMenu.innerHTML = '';
 
             if (availableVoices.length === 0) {
@@ -371,65 +380,188 @@ let videoStream = null;
                 return;
             }
 
+            console.log(`Found ${availableVoices.length} voices`);
+
             // Add default option
             const defaultOption = document.createElement('div');
             defaultOption.className = 'dropdown-item';
             defaultOption.textContent = 'Default';
             defaultOption.addEventListener('click', function () {
                 selectedVoice = null;
-                document.getElementById('voiceButton').textContent = 'Default';
+                voiceButton.querySelector('span').textContent = 'Default';
+                // Close dropdown
+                const dropdown = voiceButton.parentElement;
+                dropdown.classList.remove('active');
+                voiceButton.nextElementSibling.style.display = 'none';
             });
             voiceMenu.appendChild(defaultOption);
 
-            // Group voices by language and show accents
-            const currentLang = document.getElementById('languageButton').textContent;
-            let langCode = 'en';
-
-            switch (currentLang) {
-                case 'Hindi': langCode = 'hi'; break;
-                case 'Spanish': langCode = 'es'; break;
-                case 'French': langCode = 'fr'; break;
-                case 'German': langCode = 'de'; break;
-                case 'Japanese': langCode = 'ja'; break;
-                case 'Chinese': langCode = 'zh'; break;
-                case 'Korean': langCode = 'ko'; break;
-                default: langCode = 'en';
-            }
-
-            // Filter and add voices
-            const filteredVoices = availableVoices.filter(voice =>
-                voice.lang.toLowerCase().startsWith(langCode.toLowerCase())
-            );
-
-            // If no voices for selected language, show English voices
-            const voicesToShow = filteredVoices.length > 0 ? filteredVoices :
-                availableVoices.filter(voice => voice.lang.toLowerCase().startsWith('en'));
-
-            voicesToShow.forEach(voice => {
-                const voiceOption = document.createElement('div');
-                voiceOption.className = 'dropdown-item';
-
-                // Create a more descriptive name
-                let displayName = voice.name;
-                if (voice.name.includes('Google')) {
-                    displayName = voice.name.replace('Google ', '') + ' (Google)';
+            // Group voices by language
+            const voiceGroups = {};
+            availableVoices.forEach(voice => {
+                const langCode = voice.lang.split('-')[0];
+                if (!voiceGroups[langCode]) {
+                    voiceGroups[langCode] = [];
                 }
-
-                // Add locale info for better identification
-                displayName += ` [${voice.lang}]`;
-
-                voiceOption.textContent = displayName;
-                voiceOption.addEventListener('click', function () {
-                    selectedVoice = voice;
-                    document.getElementById('voiceButton').textContent = displayName;
-                });
-                voiceMenu.appendChild(voiceOption);
+                voiceGroups[langCode].push(voice);
             });
+
+            // Priority languages
+            const priorityLanguages = ['en', 'hi', 'es', 'fr', 'de', 'ja', 'zh', 'ko'];
+            
+            priorityLanguages.forEach(langCode => {
+                if (voiceGroups[langCode]) {
+                    // Add language header
+                    const langHeader = document.createElement('div');
+                    langHeader.className = 'dropdown-header';
+                    langHeader.textContent = getLanguageName(langCode);
+                    voiceMenu.appendChild(langHeader);
+
+                    // Add voices for this language
+                    voiceGroups[langCode].forEach(voice => {
+                        const voiceOption = document.createElement('div');
+                        voiceOption.className = 'dropdown-item';
+
+                        // Create a cleaner display name
+                        let displayName = voice.name;
+                        
+                        // Clean up common voice name patterns
+                        if (voice.name.includes('Google')) {
+                            displayName = voice.name.replace('Google ', '').replace(' HD', '') + ' (Google)';
+                        } else if (voice.name.includes('Microsoft')) {
+                            displayName = voice.name.replace('Microsoft ', '') + ' (Microsoft)';
+                        }
+                        
+                        // Add gender/type indicators
+                        if (voice.name.toLowerCase().includes('female') || voice.name.toLowerCase().includes('woman')) {
+                            displayName += ' ♀';
+                        } else if (voice.name.toLowerCase().includes('male') || voice.name.toLowerCase().includes('man')) {
+                            displayName += ' ♂';
+                        }
+
+                        voiceOption.textContent = displayName;
+                        voiceOption.addEventListener('click', function () {
+                            selectedVoice = voice;
+                            voiceButton.querySelector('span').textContent = displayName;
+                            // Close dropdown
+                            const dropdown = voiceButton.parentElement;
+                            dropdown.classList.remove('active');
+                            voiceButton.nextElementSibling.style.display = 'none';
+                            console.log('Selected voice:', voice.name, voice.lang);
+                        });
+                        voiceMenu.appendChild(voiceOption);
+                    });
+                    
+                    delete voiceGroups[langCode];
+                }
+            });
+
+            // Add remaining languages
+            Object.keys(voiceGroups).forEach(langCode => {
+                if (voiceGroups[langCode].length > 0) {
+                    const langHeader = document.createElement('div');
+                    langHeader.className = 'dropdown-header';
+                    langHeader.textContent = getLanguageName(langCode);
+                    voiceMenu.appendChild(langHeader);
+
+                    voiceGroups[langCode].forEach(voice => {
+                        const voiceOption = document.createElement('div');
+                        voiceOption.className = 'dropdown-item';
+                        voiceOption.textContent = voice.name;
+                        voiceOption.addEventListener('click', function () {
+                            selectedVoice = voice;
+                            voiceButton.querySelector('span').textContent = voice.name;
+                            // Close dropdown
+                            const dropdown = voiceButton.parentElement;
+                            dropdown.classList.remove('active');
+                            voiceButton.nextElementSibling.style.display = 'none';
+                        });
+                        voiceMenu.appendChild(voiceOption);
+                    });
+                }
+            });
+
+            // Set up dropdown toggle
+            voiceButton.addEventListener('click', function(e) {
+                e.stopPropagation();
+                const dropdown = this.parentElement; // Get the .custom-dropdown parent
+                const dropdownMenu = this.nextElementSibling;
+                const isOpen = dropdown.classList.contains('active');
+                
+                // Close all other dropdowns first
+                document.querySelectorAll('.custom-dropdown').forEach(dd => {
+                    dd.classList.remove('active');
+                });
+                
+                // Toggle this dropdown
+                if (!isOpen) {
+                    dropdown.classList.add('active');
+                    dropdownMenu.style.display = 'block';
+                } else {
+                    dropdown.classList.remove('active');
+                    dropdownMenu.style.display = 'none';
+                }
+            });
+
+            // Close dropdown when clicking outside
+            document.addEventListener('click', function() {
+                document.querySelectorAll('.custom-dropdown').forEach(dropdown => {
+                    dropdown.classList.remove('active');
+                    const menu = dropdown.querySelector('.dropdown-menu');
+                    if (menu) menu.style.display = 'none';
+                });
+            });
+        }
+
+        function getLanguageName(langCode) {
+            const languageNames = {
+                'en': 'English',
+                'hi': 'Hindi',
+                'es': 'Spanish',
+                'fr': 'French',
+                'de': 'German',
+                'ja': 'Japanese',
+                'zh': 'Chinese',
+                'ko': 'Korean',
+                'it': 'Italian',
+                'pt': 'Portuguese',
+                'ru': 'Russian',
+                'ar': 'Arabic',
+                'th': 'Thai',
+                'vi': 'Vietnamese',
+                'nl': 'Dutch',
+                'sv': 'Swedish',
+                'da': 'Danish',
+                'no': 'Norwegian',
+                'fi': 'Finnish',
+                'pl': 'Polish',
+                'tr': 'Turkish'
+            };
+            return languageNames[langCode] || langCode.toUpperCase();
+        }
+
+        function toggleDropdown(dropdown, show) {
+            if (show) {
+                dropdown.classList.add('active');
+                dropdown.style.display = 'block';
+            } else {
+                dropdown.classList.remove('active');
+                setTimeout(() => {
+                    if (!dropdown.classList.contains('active')) {
+                        dropdown.style.display = 'none';
+                    }
+                }, 200);
+            }
         }
 
         function processAndSpeak() {
             // Get the detected text
             const detectedText = document.getElementById('detectedText').textContent;
+
+            if (!detectedText || detectedText === 'Click "Start Camera" to begin detection' || detectedText.trim() === '' || detectedText === '--') {
+                showTemporaryMessage('No text to speak', 'warning');
+                return;
+            }
 
             // Check if Speech Synthesis is supported
             if ('speechSynthesis' in window) {
@@ -439,61 +571,277 @@ let videoStream = null;
                 // Create a new SpeechSynthesisUtterance
                 const utterance = new SpeechSynthesisUtterance(detectedText);
 
-                // Configure voice settings
-                utterance.rate = 0.9; // Slightly slower for clarity
-                utterance.pitch = 1;
+                // Configure voice settings - simple defaults
+                utterance.rate = 0.9;
+                utterance.pitch = 1.0;
                 utterance.volume = 1;
 
                 // Set voice if one is selected
                 if (selectedVoice) {
                     utterance.voice = selectedVoice;
+                    utterance.lang = selectedVoice.lang;
+                    console.log(`Using voice: ${selectedVoice.name} (${selectedVoice.lang})`);
                 } else {
-                    // Set language based on selection
-                    const selectedLanguage = document.getElementById('languageButton').textContent;
-                    switch (selectedLanguage) {
-                        case 'Hindi':
-                            utterance.lang = 'hi-IN';
-                            break;
-                        case 'Spanish':
-                            utterance.lang = 'es-ES';
-                            break;
-                        case 'French':
-                            utterance.lang = 'fr-FR';
-                            break;
-                        case 'German':
-                            utterance.lang = 'de-DE';
-                            break;
-                        case 'Japanese':
-                            utterance.lang = 'ja-JP';
-                            break;
-                        case 'Chinese':
-                            utterance.lang = 'zh-CN';
-                            break;
-                        case 'Korean':
-                            utterance.lang = 'ko-KR';
-                            break;
-                        default:
-                            utterance.lang = 'en-US';
+                    // Set language based on language selection
+                    const languageSelect = document.getElementById('language-select');
+                    if (languageSelect) {
+                        const selectedLang = languageSelect.value;
+                        switch (selectedLang) {
+                            case 'hi':
+                                utterance.lang = 'hi-IN';
+                                break;
+                            case 'es':
+                                utterance.lang = 'es-ES';
+                                break;
+                            case 'fr':
+                                utterance.lang = 'fr-FR';
+                                break;
+                            default:
+                                utterance.lang = 'en-US';
+                        }
+                    } else {
+                        utterance.lang = 'en-US';
                     }
                 }
 
-                // Speak the text
-                speechSynthesis.speak(utterance);
-
                 // Visual feedback
                 const button = document.getElementById('processButton');
-                button.textContent = 'Speaking...';
+                const playButton = document.getElementById('play-audio');
+                const originalButtonText = button ? button.innerHTML : '';
+                
+                if (button) {
+                    button.innerHTML = '<i class="fas fa-volume-up"></i> Speaking...';
+                    button.disabled = true;
+                }
+                
+                if (playButton) {
+                    playButton.innerHTML = '<i class="fas fa-stop"></i>';
+                    playButton.style.background = 'linear-gradient(135deg, #ff4757, #ff3838)';
+                }
+
+                // Animate audio visualizer
+                animateAudioVisualizer(true);
+
+                // Event handlers
+                utterance.onstart = function() {
+                    console.log('Speech started');
+                    showTemporaryMessage('🔊 Playing audio...', 'info');
+                };
 
                 utterance.onend = function () {
-                    button.textContent = 'Process';
+                    console.log('Speech ended');
+                    if (button) {
+                        button.innerHTML = originalButtonText;
+                        button.disabled = false;
+                    }
+                    
+                    if (playButton) {
+                        playButton.innerHTML = '<i class="fas fa-volume-up"></i>';
+                        playButton.style.background = '';
+                    }
+                    
+                    animateAudioVisualizer(false);
+                    showTemporaryMessage('✅ Audio playback completed', 'success');
                 };
 
                 utterance.onerror = function (event) {
                     console.error('Speech synthesis error:', event.error);
-                    button.textContent = 'Process';
-                    alert('Error occurred during speech synthesis: ' + event.error);
+                    if (button) {
+                        button.innerHTML = originalButtonText;
+                        button.disabled = false;
+                    }
+                    
+                    if (playButton) {
+                        playButton.innerHTML = '<i class="fas fa-volume-up"></i>';
+                        playButton.style.background = '';
+                    }
+                    
+                    animateAudioVisualizer(false);
+                    showTemporaryMessage('❌ Speech error: ' + event.error, 'warning');
                 };
+
+                // Speak the text
+                speechSynthesis.speak(utterance);
+                console.log(`Speaking: "${detectedText}" with rate=${utterance.rate}, pitch=${utterance.pitch}`);
+
             } else {
-                alert('Speech synthesis is not supported in your browser.');
+                showTemporaryMessage('❌ Speech synthesis not supported in this browser', 'warning');
+            }
+        }
+
+        function clearDetection() {
+            // Clear the detected text
+            document.getElementById('detectedText').textContent = 'Click "Start Camera" to begin detection';
+            
+            // Reset confidence
+            document.getElementById('confidence-value').textContent = '--';
+            document.getElementById('confidence-fill').style.width = '0%';
+            
+            // Reset test phrases dropdown
+            const testPhrases = document.getElementById('testPhrases');
+            if (testPhrases) {
+                testPhrases.value = '';
+            }
+            
+            // Stop any ongoing speech
+            if ('speechSynthesis' in window) {
+                speechSynthesis.cancel();
+            }
+            
+            // Stop audio visualizer
+            animateAudioVisualizer(false);
+            
+            showTemporaryMessage('Detection cleared', 'info');
+        }
+
+        // Load voices for testing
+        function loadVoicesForTesting() {
+            availableVoices = speechSynthesis.getVoices();
+            const voiceMenu = document.getElementById('voiceMenu');
+            const voiceButton = document.getElementById('voiceButton');
+            
+            if (!voiceMenu || !voiceButton) return;
+            
+            voiceMenu.innerHTML = '';
+
+            if (availableVoices.length === 0) {
+                voiceMenu.innerHTML = '<div class="dropdown-item">No voices available</div>';
+                return;
+            }
+
+            console.log(`Found ${availableVoices.length} voices`);
+
+            // Add default option
+            const defaultOption = document.createElement('div');
+            defaultOption.className = 'dropdown-item';
+            defaultOption.textContent = 'Default Voice';
+            defaultOption.addEventListener('click', function () {
+                selectedVoice = null;
+                voiceButton.querySelector('span').textContent = 'Default Voice';
+                // Close dropdown
+                const dropdown = voiceButton.parentElement;
+                dropdown.classList.remove('active');
+                voiceButton.nextElementSibling.style.display = 'none';
+            });
+            voiceMenu.appendChild(defaultOption);
+
+            // Filter voices for English and other common languages
+            const priorityLanguages = ['en', 'es', 'fr', 'de'];
+            
+            priorityLanguages.forEach(langCode => {
+                const langVoices = availableVoices.filter(voice => 
+                    voice.lang.toLowerCase().startsWith(langCode)
+                );
+                
+                if (langVoices.length > 0) {
+                    // Add language header
+                    const langHeader = document.createElement('div');
+                    langHeader.className = 'dropdown-header';
+                    langHeader.textContent = getLanguageName(langCode);
+                    voiceMenu.appendChild(langHeader);
+
+                    // Add first few voices for each language
+                    langVoices.slice(0, 3).forEach(voice => {
+                        const voiceOption = document.createElement('div');
+                        voiceOption.className = 'dropdown-item';
+
+                        // Create cleaner display name
+                        let displayName = voice.name;
+                        if (voice.name.includes('Google')) {
+                            displayName = voice.name.replace('Google ', '').replace(' HD', '') + ' (Google)';
+                        } else if (voice.name.includes('Microsoft')) {
+                            displayName = voice.name.replace('Microsoft ', '') + ' (Microsoft)';
+                        }
+
+                        voiceOption.textContent = displayName;
+                        voiceOption.addEventListener('click', function () {
+                            selectedVoice = voice;
+                            voiceButton.querySelector('span').textContent = displayName;
+                            // Close dropdown
+                            const dropdown = voiceButton.parentElement;
+                            dropdown.classList.remove('active');
+                            voiceButton.nextElementSibling.style.display = 'none';
+                            console.log('Selected voice:', voice.name, voice.lang);
+                        });
+                        voiceMenu.appendChild(voiceOption);
+                    });
+                }
+            });
+
+            // Set up dropdown toggle
+            voiceButton.addEventListener('click', function(e) {
+                e.stopPropagation();
+                const dropdown = this.parentElement; // Get the .custom-dropdown parent
+                const dropdownMenu = this.nextElementSibling;
+                const isOpen = dropdown.classList.contains('active');
+                
+                // Close all other dropdowns first
+                document.querySelectorAll('.custom-dropdown').forEach(dd => {
+                    dd.classList.remove('active');
+                    const menu = dd.querySelector('.dropdown-menu');
+                    if (menu) menu.style.display = 'none';
+                });
+                
+                // Toggle this dropdown
+                if (!isOpen) {
+                    dropdown.classList.add('active');
+                    dropdownMenu.style.display = 'block';
+                }
+            });
+
+            // Close dropdown when clicking outside
+            document.addEventListener('click', function() {
+                document.querySelectorAll('.custom-dropdown').forEach(dropdown => {
+                    dropdown.classList.remove('active');
+                    const menu = dropdown.querySelector('.dropdown-menu');
+                    if (menu) menu.style.display = 'none';
+                });
+            });
+        }
+
+        function getLanguageName(langCode) {
+            const languageNames = {
+                'en': 'English',
+                'es': 'Spanish', 
+                'fr': 'French',
+                'de': 'German'
+            };
+            return languageNames[langCode] || langCode.toUpperCase();
+        }
+
+        function toggleDropdown(dropdown, show) {
+            if (show) {
+                dropdown.classList.add('active');
+                dropdown.style.display = 'block';
+                const button = dropdown.previousElementSibling;
+                if (button) {
+                    button.classList.add('active');
+                }
+            } else {
+                dropdown.classList.remove('active');
+                const button = dropdown.previousElementSibling;
+                if (button) {
+                    button.classList.remove('active');
+                }
+                setTimeout(() => {
+                    if (!dropdown.classList.contains('active')) {
+                        dropdown.style.display = 'none';
+                    }
+                }, 200);
+            }
+        }
+
+        function animateAudioVisualizer(isPlaying) {
+            const bars = document.querySelectorAll('.waveform-bar');
+            
+            if (isPlaying) {
+                bars.forEach((bar, index) => {
+                    bar.style.animation = `audioWave 0.5s ease-in-out infinite alternate`;
+                    bar.style.animationDelay = `${index * 0.1}s`;
+                });
+            } else {
+                bars.forEach(bar => {
+                    bar.style.animation = '';
+                });
             }
         }

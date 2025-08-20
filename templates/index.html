@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Intellify - AI Sign Language Translator</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='dropdown-fix.css') }}">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
@@ -137,14 +138,14 @@
                                 </div>
                             </div>
                             <div class="prediction-display">
-                                <div id="detectedText" class="predicted-text">Ready to detect...</div>
+                                <div id="detectedText" class="predicted-text">Click "Start Camera" to begin detection</div>
                                 <div class="confidence-section">
                                     <div class="confidence-label">
                                         <span>Confidence</span>
-                                        <span id="confidence-value">85%</span>
+                                        <span id="confidence-value">--</span>
                                     </div>
                                     <div class="confidence-bar">
-                                        <div id="confidence-fill" class="confidence-fill"></div>
+                                        <div id="confidence-fill" class="confidence-fill" style="width: 0%"></div>
                                     </div>
                                 </div>
                             </div>
@@ -175,12 +176,44 @@
 
                         <div class="settings-section">
                             <div class="settings-card">
-                                <h3>Voice Settings</h3>
-                                <div class="voice-selector">
-                                    <label for="voice-select">Voice:</label>
-                                    <select id="voiceButton" class="voice-dropdown">
-                                        <option value="default">Default</option>
+                                <h3>Quick Actions</h3>
+                                <div class="test-phrases">
+                                    <label>Test Phrases:</label>
+                                    <select id="testPhrases" class="test-dropdown">
+                                        <option value="">Select a test phrase...</option>
+                                        <option value="Hello">Hello</option>
+                                        <option value="Thank you">Thank you</option>
+                                        <option value="Good morning">Good morning</option>
+                                        <option value="How are you?">How are you?</option>
+                                        <option value="I love you">I love you</option>
+                                        <option value="Please">Please</option>
+                                        <option value="Yes">Yes</option>
+                                        <option value="No">No</option>
+                                        <option value="Sorry">Sorry</option>
+                                        <option value="Nice to meet you">Nice to meet you</option>
                                     </select>
+                                </div>
+                                <div class="voice-selection">
+                                    <label>Voice:</label>
+                                    <div class="custom-dropdown">
+                                        <button id="voiceButton" class="dropdown-button">
+                                            <span>Default Voice</span>
+                                            <i class="fas fa-chevron-down"></i>
+                                        </button>
+                                        <div id="voiceMenu" class="dropdown-menu">
+                                            <div class="dropdown-item">Loading voices...</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="quick-actions">
+                                    <button class="action-button" onclick="processAndSpeak()">
+                                        <i class="fas fa-volume-up"></i>
+                                        Speak Text
+                                    </button>
+                                    <button class="action-button" onclick="clearDetection()">
+                                        <i class="fas fa-refresh"></i>
+                                        Clear
+                                    </button>
                                 </div>
                             </div>
                         </div>

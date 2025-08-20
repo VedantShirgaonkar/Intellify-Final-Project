@@ -1,0 +1,207 @@
+/* Voice Controls Styling */
+.voice-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.voice-selector {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.voice-selector label {
+    font-weight: 500;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+.dropdown {
+    position: relative;
+    display: inline-block;
+    width: 100%;
+}
+
+.dropdown-button {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding: 0.75rem 1rem;
+    background: var(--surface-light);
+    border: 2px solid var(--border-color);
+    border-radius: 12px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: all 0.3s ease;
+    color: var(--text-primary);
+}
+
+.dropdown-button:hover {
+    border-color: var(--primary-color);
+    box-shadow: 0 4px 12px rgba(135, 207, 235, 0.15);
+}
+
+.dropdown-button i {
+    transition: transform 0.3s ease;
+    color: var(--text-secondary);
+}
+
+.dropdown-button.active i {
+    transform: rotate(180deg);
+}
+
+.dropdown-menu {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: white;
+    border: 2px solid var(--border-color);
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+    z-index: 1000;
+    max-height: 300px;
+    overflow-y: auto;
+    opacity: 0;
+    transform: translateY(-10px);
+    transition: all 0.3s ease;
+    display: none;
+}
+
+.dropdown-menu.active {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.dropdown-header {
+    padding: 0.5rem 1rem;
+    font-weight: 600;
+    color: var(--primary-color);
+    background: linear-gradient(135deg, #e8f4fd, #f0f9ff);
+    border-bottom: 1px solid var(--border-color);
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.dropdown-item {
+    padding: 0.75rem 1rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border-bottom: 1px solid #f0f0f0;
+    font-size: 0.9rem;
+}
+
+.dropdown-item:hover {
+    background: linear-gradient(135deg, #e8f4fd, #f0f9ff);
+    color: var(--primary-color);
+}
+
+.dropdown-item:last-child {
+    border-bottom: none;
+}
+
+.voice-controls-row {
+    display: flex;
+    gap: 1rem;
+}
+
+.control-group {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.control-group label {
+    font-weight: 500;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+}
+
+.control-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    height: 6px;
+    border-radius: 3px;
+    background: linear-gradient(to right, var(--primary-color) 0%, var(--primary-color) 50%, #e0e0e0 50%, #e0e0e0 100%);
+    outline: none;
+    transition: all 0.3s ease;
+}
+
+.control-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--primary-color);
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(135, 207, 235, 0.3);
+    transition: all 0.3s ease;
+}
+
+.control-slider::-webkit-slider-thumb:hover {
+    transform: scale(1.1);
+    box-shadow: 0 4px 12px rgba(135, 207, 235, 0.4);
+}
+
+.control-slider::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--primary-color);
+    cursor: pointer;
+    border: none;
+    box-shadow: 0 2px 8px rgba(135, 207, 235, 0.3);
+}
+
+.control-group span {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+    text-align: center;
+}
+
+/* Audio visualizer animation */
+@keyframes audioWave {
+    0% { 
+        height: 20px;
+        background: linear-gradient(to top, var(--primary-color), #a0e7ff);
+    }
+    100% { 
+        height: 50px;
+        background: linear-gradient(to top, #ff6b9d, var(--primary-color));
+    }
+}
+
+.waveform-bar {
+    transition: all 0.3s ease;
+}
+
+/* Audio button enhancements */
+.audio-button {
+    background: linear-gradient(135deg, var(--primary-color), #a0e7ff);
+    border: none;
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    color: white;
+    font-size: 1.1rem;
+}
+
+.audio-button:hover {
+    transform: scale(1.1);
+    box-shadow: 0 6px 20px rgba(135, 207, 235, 0.4);
+}
+
+.audio-button:active {
+    transform: scale(0.95);
+}
