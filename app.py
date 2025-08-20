@@ -4,9 +4,14 @@ import os
 import tempfile
 from datetime import datetime
 import logging
+import tensorflow as tf
+import numpy as np
+import cv2 as cv
+import mediapipe as mp
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
 CORS(app)  # Enable CORS for all routes
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -16,8 +21,54 @@ UPLOAD_FOLDER = 'uploads'
 ALLOWED_EXTENSIONS = {'webm', 'mp4', 'avi', 'mov'}
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
 
+# Model configuration
+MODEL_PATH = 'models/main_wsl_model.h5'  # Update path as needed
+LABEL_MAP_PATH = 'models/label_map.npy'  # Update path as needed
+SEQUENCE_LENGTH = 30
+CONFIDENCE_THRESHOLD = 0.7
+
+# Global variables for model
+model = None
+label_map = None
+actions = None
+mp_holistic = mp.solutions.holistic
+
 # Create upload directory if it doesn't exist
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+def load_model():
+    """Load the trained model and label map"""
+    global model, label_map, actions
+    try:
+        if os.path.exists(MODEL_PATH) and os.path.exists(LABEL_MAP_PATH):
+            model = tf.keras.models.load_model(MODEL_PATH)
+            label_map = np.load(LABEL_MAP_PATH, allow_pickle=True).item()
+            actions = list(label_map.keys())
+            logger.info(f"Model loaded successfully with {len(actions)} actions")
+            return True
+        else:
+            logger.warning(f"Model files not found at {MODEL_PATH} or {LABEL_MAP_PATH}")
+            return False
+    except Exception as e:
+        logger.error(f"Error loading model: {str(e)}")
+        return False
+
+def mediapipe_detection(image, model):
+    """Perform mediapipe detection"""
+    image = cv.cvtColor(image, cv.COLOR_BGR2RGB)
+    image.flags.writeable = False
+    results = model.process(image)
+    image.flags.writeable = True
+    image = cv.cvtColor(image, cv.COLOR_RGB2BGR)
+    return image, results
+
+def extract_keypoints(results):
+    """Extract keypoints from mediapipe results"""
+    #pose = np.array([[res.x, res.y, res.z, res.visibility] for res in results.pose_landmarks.landmark]).flatten() if results.pose_landmarks else np.zeros(33*4)
+    face = np.array([[res.x, res.y, res.z] for res in results.face_landmarks.landmark]).flatten() if results.face_landmarks else np.zeros(468*3)
+    lh = np.array([[res.x, res.y, res.z] for res in results.left_hand_landmarks.landmark]).flatten() if results.left_hand_landmarks else np.zeros(21*3)
+    rh = np.array([[res.x, res.y, res.z] for res in results.right_hand_landmarks.landmark]).flatten() if results.right_hand_landmarks else np.zeros(21*3)
+    return np.concatenate([face, lh, rh])
 
 def allowed_file(filename):
     return '.' in filename and \
@@ -25,30 +76,96 @@ def allowed_file(filename):
 
 def process_sign_language_video(video_path):
     """
-    Placeholder function for sign language processing.
-    Replace this with your actual ML model/processing logic.
+    Process video for sign language detection using the trained model
     """
-    # Simulate processing time
-    import time
-    time.sleep(1)
+    global model, actions
     
-    # Mock results - replace with actual sign language detection
-    mock_results = [
-        {"detected_sign": "Hello", "confidence": 0.95},
-        {"detected_sign": "Thank you", "confidence": 0.87},
-        {"detected_sign": "Please", "confidence": 0.92},
-        {"detected_sign": "Yes", "confidence": 0.89},
-        {"detected_sign": "No", "confidence": 0.94}
-    ]
+    if model is None:
+        logger.error("Model not loaded")
+        return {"detected_sign": "Error", "confidence": 0.0, "error": "Model not loaded"}
     
-    # Return a random result for demo purposes
-    import random
-    return random.choice(mock_results)
+    try:
+        # Variables for prediction
+        sequence = []
+        predictions = []
+        confidences = []
+        
+        # Open video
+        cap = cv.VideoCapture(video_path)
+        
+        if not cap.isOpened():
+            logger.error("Could not open video file")
+            return {"detected_sign": "Error", "confidence": 0.0, "error": "Could not open video"}
+        
+        with mp_holistic.Holistic(min_detection_confidence=0.5, min_tracking_confidence=0.5) as holistic:
+            frame_count = 0
+            while cap.isOpened():
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                
+                frame_count += 1
+                
+                # Resize for consistency
+                frame = cv.resize(frame, (640, 480))
+                
+                # Detection
+                image, results = mediapipe_detection(frame, holistic)
+                
+                # Extract keypoints
+                keypoints = extract_keypoints(results)
+                
+                # Append to sequence
+                sequence.append(keypoints)
+                sequence = sequence[-SEQUENCE_LENGTH:]
+                
+                if len(sequence) == SEQUENCE_LENGTH:
+                    input_seq = np.expand_dims(sequence, axis=0)  # shape (1, 30, 1530)
+                    
+                    # Predict
+                    res = model.predict(input_seq, verbose=0)[0]
+                    predicted_action = actions[np.argmax(res)]
+                    confidence = np.max(res)
+                    
+                    # Store prediction if above threshold
+                    if confidence > CONFIDENCE_THRESHOLD:
+                        predictions.append(predicted_action)
+                        confidences.append(confidence)
+        
+        cap.release()
+        
+        # Return the most common prediction or highest confidence prediction
+        if predictions:
+            # Get the prediction with highest confidence
+            best_idx = np.argmax(confidences)
+            best_prediction = predictions[best_idx]
+            best_confidence = confidences[best_idx]
+            
+            logger.info(f"Detected sign: {best_prediction} with confidence: {best_confidence:.2f}")
+            
+            return {
+                "detected_sign": best_prediction,
+                "confidence": float(best_confidence),
+                "total_frames": frame_count,
+                "valid_predictions": len(predictions)
+            }
+        else:
+            logger.warning("No confident predictions found")
+            return {
+                "detected_sign": "No sign detected",
+                "confidence": 0.0,
+                "total_frames": frame_count,
+                "valid_predictions": 0
+            }
+            
+    except Exception as e:
+        logger.error(f"Error processing video: {str(e)}")
+        return {"detected_sign": "Error", "confidence": 0.0, "error": str(e)}
+
 
 @app.route('/')
 def index():
     """Serve the main HTML page"""
-    # Option 1: Serve from templates folder (default)
     return render_template('index.html')
 
 @app.route('/about')
@@ -94,13 +211,29 @@ def process_video():
         logger.info(f"File size: {file_size / 1024:.2f} KB")
         
         # Save video file temporarily
+        """
         with tempfile.NamedTemporaryFile(delete=False, suffix='.webm', dir=UPLOAD_FOLDER) as temp_file:
             video_file.save(temp_file.name)
             temp_video_path = temp_file.name
+        """
+
         
+        
+        unique_filename = f"D:\\Intellify_hackathon\\uploads\\z.webm"
+        video_file.save(unique_filename)
+        temp_video_path = unique_filename
+
         try:
             # Process the video for sign language detection
             result = process_sign_language_video(temp_video_path)
+            
+            # Check if there was an error during processing
+            if 'error' in result:
+                return jsonify({
+                    'error': 'Processing failed',
+                    'message': result['error'],
+                    'status': 'error'
+                }), 500
             
             # Prepare response
             response_data = {
@@ -110,7 +243,9 @@ def process_video():
                 'confidence': result['confidence'],
                 'timestamp': timestamp,
                 'duration': duration,
-                'processing_time': datetime.now().isoformat()
+                'processing_time': datetime.now().isoformat(),
+                'total_frames': result.get('total_frames', 0),
+                'valid_predictions': result.get('valid_predictions', 0)
             }
             
             logger.info(f"Processing result: {result['detected_sign']} (confidence: {result['confidence']:.2f})")
@@ -120,8 +255,8 @@ def process_video():
         finally:
             # Clean up temporary file
             try:
-                a = 1
-               ## os.unlink(temp_video_path)
+                #os.unlink(temp_video_path)
+                a=1
             except OSError:
                 logger.warning(f"Could not delete temporary file: {temp_video_path}")
     
@@ -132,6 +267,18 @@ def process_video():
             'message': 'Failed to process video',
             'status': 'error'
         }), 500
+
+@app.route('/model-status', methods=['GET'])
+def model_status():
+    """Check model loading status"""
+    global model, actions
+    is_loaded = model is not None
+    return jsonify({
+        'model_loaded': is_loaded,
+        'actions_count': len(actions) if actions else 0,
+        'actions': actions if actions else [],
+        'timestamp': datetime.now().isoformat()
+    }), 200
 
 @app.route('/health', methods=['GET'])
 def health_check():
@@ -151,4 +298,10 @@ def not_found(e):
     return jsonify({'error': 'Endpoint not found'}), 404
 
 if __name__ == '__main__':
+    # Load model before starting the app
+    success = load_model()
+    print("Model loaded successfully")
+    if not success:
+        logger.warning("Model failed to load - using mock responses")
+
     app.run(debug=True, host='0.0.0.0', port=5000)
