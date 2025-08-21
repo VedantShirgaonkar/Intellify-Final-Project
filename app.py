@@ -4,10 +4,14 @@ import os
 import tempfile
 from datetime import datetime
 import logging
-import tensorflow as tf
 import numpy as np
+
+# Import ML dependencies
+import tensorflow as tf
 import cv2 as cv
 import mediapipe as mp
+
+print("✅ ML dependencies loaded successfully")
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
 CORS(app)  # Enable CORS for all routes
@@ -39,6 +43,7 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 def load_model():
     """Load the trained model and label map"""
     global model, label_map, actions
+        
     try:
         if os.path.exists(MODEL_PATH) and os.path.exists(LABEL_MAP_PATH):
             model = tf.keras.models.load_model(MODEL_PATH)
@@ -210,18 +215,12 @@ def process_video():
         logger.info(f"Duration: {duration} seconds")
         logger.info(f"File size: {file_size / 1024:.2f} KB")
         
-        # Save video file temporarily
-        """
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.webm', dir=UPLOAD_FOLDER) as temp_file:
-            video_file.save(temp_file.name)
-            temp_video_path = temp_file.name
-        """
-
-        
-        
-        unique_filename = f"D:\\Intellify_hackathon\\uploads\\z.webm"
-        video_file.save(unique_filename)
-        temp_video_path = unique_filename
+        # Save video file temporarily with unique filename
+        import uuid
+        file_extension = video_file.filename.rsplit('.', 1)[1].lower()
+        unique_filename = f"{uuid.uuid4().hex}.{file_extension}"
+        temp_video_path = os.path.join(UPLOAD_FOLDER, unique_filename)
+        video_file.save(temp_video_path)
 
         try:
             # Process the video for sign language detection
@@ -255,10 +254,11 @@ def process_video():
         finally:
             # Clean up temporary file
             try:
-                #os.unlink(temp_video_path)
-                a=1
-            except OSError:
-                logger.warning(f"Could not delete temporary file: {temp_video_path}")
+                if os.path.exists(temp_video_path):
+                    os.unlink(temp_video_path)
+                    logger.info(f"Cleaned up temporary file: {temp_video_path}")
+            except OSError as e:
+                logger.warning(f"Could not delete temporary file: {temp_video_path}, Error: {e}")
     
     except Exception as e:
         logger.error(f"Error processing video: {str(e)}")
@@ -275,6 +275,8 @@ def model_status():
     is_loaded = model is not None
     return jsonify({
         'model_loaded': is_loaded,
+        'ml_libraries_available': True,
+        'demo_mode': not is_loaded,
         'actions_count': len(actions) if actions else 0,
         'actions': actions if actions else [],
         'timestamp': datetime.now().isoformat()
@@ -298,10 +300,19 @@ def not_found(e):
     return jsonify({'error': 'Endpoint not found'}), 404
 
 if __name__ == '__main__':
+    print("🚀 Starting Sign Language Translator...")
+    print("📁 Checking model files...")
+    
     # Load model before starting the app
     success = load_model()
-    print("Model loaded successfully")
-    if not success:
-        logger.warning("Model failed to load - using mock responses")
-
+    if success:
+        print("✅ Model loaded successfully!")
+        print(f"📊 Available actions: {len(actions) if actions else 0}")
+        if actions:
+            print(f"🎯 Actions: {', '.join(actions[:5])}{'...' if len(actions) > 5 else ''}")
+    else:
+        print("⚠️  Model failed to load - running in demo mode")
+        print("💡 To enable full functionality, ensure model files are in the 'models/' directory")
+    
+    print("🌐 Starting Flask server...")
     app.run(debug=True, host='0.0.0.0', port=5000)
