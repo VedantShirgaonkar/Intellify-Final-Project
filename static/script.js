@@ -11,6 +11,7 @@ let videoStream = null;
         // Wait for the page to load before initializing MediaPipe
         window.addEventListener('load', async function() {
             await initializeMediaPipe();
+            await checkModelStatus();
 
             // Load voices for testing
             loadVoicesForTesting();
@@ -288,8 +289,16 @@ let videoStream = null;
                         document.querySelector('.confidence-fill').style.width = `${confidencePercentage}%`;
                     }
 
+                    // Log additional model information if available
+                    if (result.total_frames) {
+                        console.log(`Processed ${result.total_frames} frames`);
+                    }
+                    if (result.valid_predictions) {
+                        console.log(`Found ${result.valid_predictions} confident predictions`);
+                    }
+
                     // Show success message
-                    showTemporaryMessage('Video processed successfully!', 'success');
+                    showTemporaryMessage(`Detected: ${result.detected_sign || 'Unknown'} (${Math.round((result.confidence || 0) * 100)}%)`, 'success');
 
                 } else {
                     throw new Error(`Server responded with status: ${response.status}`);
@@ -843,5 +852,36 @@ let videoStream = null;
                 bars.forEach(bar => {
                     bar.style.animation = '';
                 });
+            }
+        }
+
+        // Check model status on startup
+        async function checkModelStatus() {
+            try {
+                const response = await fetch('/model-status');
+                if (response.ok) {
+                    const status = await response.json();
+                    console.log('Model Status:', status);
+                    
+                    if (status.demo_mode) {
+                        if (!status.ml_libraries_available) {
+                            console.log('⚠️ ML libraries not available - running in demo mode');
+                            showTemporaryMessage('Running in Demo Mode (ML libraries unavailable)', 'warning');
+                        } else if (!status.model_loaded) {
+                            console.log('⚠️ Model not loaded - running in demo mode');
+                            showTemporaryMessage('Running in Demo Mode (Model not loaded)', 'warning');
+                        }
+                    } else {
+                        console.log(`✅ Model loaded successfully with ${status.actions_count} actions`);
+                        console.log('Available actions:', status.actions);
+                        showTemporaryMessage('AI Model Ready! 🤖', 'success');
+                    }
+                } else {
+                    console.log('⚠️ Could not check model status');
+                    showTemporaryMessage('Running in Demo Mode', 'warning');
+                }
+            } catch (error) {
+                console.error('Error checking model status:', error);
+                showTemporaryMessage('Running in Demo Mode', 'warning');
             }
         }
