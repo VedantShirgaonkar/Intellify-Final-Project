@@ -5,6 +5,7 @@ import tempfile
 from datetime import datetime
 import logging
 import numpy as np
+import time
 
 # Import ML dependencies
 import tensorflow as tf
@@ -85,6 +86,10 @@ def process_sign_language_video(video_path):
     """
     global model, actions
     
+    # Start overall timing
+    start_time = time.time()
+    timing_data = {}
+    
     if model is None:
         logger.error("Model not loaded")
         return {
@@ -101,6 +106,10 @@ def process_sign_language_video(video_path):
         frame_count = 0
         cleanup_paths = []
         
+        # Time video opening
+        video_open_start = time.time()
+        logger.info(f"🎬 Starting video opening process...")
+        
         # Open video with optimized WebM support
         cap = None
         backends_to_try = [
@@ -110,27 +119,45 @@ def process_sign_language_video(video_path):
             cv.CAP_ANY        # Default backend
         ]
         
+        backend_attempt_count = 0
         for backend in backends_to_try:
             try:
+                backend_attempt_count += 1
+                backend_start = time.time()
                 cap = cv.VideoCapture(video_path, backend)
                 if cap.isOpened():
-                    logger.info(f"Successfully opened WebM video with backend: {backend}")
+                    backend_time = time.time() - backend_start
+                    video_open_time = time.time() - video_open_start
+                    timing_data['video_opening'] = video_open_time
+                    timing_data['backend_attempts'] = backend_attempt_count
+                    timing_data['successful_backend'] = backend
+                    logger.info(f"✅ Video opened with backend {backend} in {backend_time:.3f}s (total: {video_open_time:.3f}s)")
                     break
                 else:
                     cap.release()
                     cap = None
+                    backend_time = time.time() - backend_start
+                    logger.debug(f"❌ Backend {backend} failed in {backend_time:.3f}s")
             except Exception as e:
-                logger.debug(f"Backend {backend} failed: {e}")
+                backend_time = time.time() - backend_start if 'backend_start' in locals() else 0
+                logger.debug(f"💥 Backend {backend} exception in {backend_time:.3f}s: {e}")
                 continue
         
         if cap is None:
             # Last resort: try imageio for direct WebM decoding
-            logger.warning("OpenCV backends failed. Trying imageio for direct WebM processing...")
+            imageio_start = time.time()
+            logger.warning("🔄 All OpenCV backends failed. Trying imageio for direct WebM processing...")
             try:
                 import imageio
                 reader = imageio.get_reader(video_path)
                 
                 # Process frames directly from imageio reader for real-time performance
+                mediapipe_start = time.time()
+                timing_data['video_opening'] = time.time() - video_open_start
+                timing_data['backend_attempts'] = len(backends_to_try)
+                timing_data['successful_backend'] = 'imageio'
+                logger.info(f"📹 ImageIO reader created in {time.time() - imageio_start:.3f}s")
+                
                 with mp_holistic.Holistic(min_detection_confidence=0.5, min_tracking_confidence=0.5) as holistic:
                     for frame in reader:
                         # Convert from RGB to BGR for OpenCV/MediaPipe
@@ -149,12 +176,22 @@ def process_sign_language_video(video_path):
                         
                         # Predict every SEQUENCE_LENGTH frames
                         if len(sequence) == SEQUENCE_LENGTH:
+                            prediction_start = time.time()
                             res = model.predict(np.expand_dims(sequence, axis=0), verbose=0)[0]
+                            prediction_time = time.time() - prediction_start
+                            
                             predictions.append(np.argmax(res))
                             confidences.append(np.max(res))
                             sequence = []
+                            
+                            logger.debug(f"🧠 Model prediction took {prediction_time:.3f}s")
                     
                 reader.close()
+                
+                # Calculate timing
+                mediapipe_time = time.time() - mediapipe_start
+                timing_data['mediapipe_processing'] = mediapipe_time
+                logger.info(f"🎯 MediaPipe processing completed in {mediapipe_time:.3f}s")
                 
                 # Final cleanup and prediction
                 cleanup_paths = []  # No temp files with imageio
@@ -170,13 +207,41 @@ def process_sign_language_video(video_path):
         
         # If we successfully opened with OpenCV, process with the optimized pipeline
         if cap is not None:
-            with mp_holistic.Holistic(min_detection_confidence=0.5, min_tracking_confidence=0.5) as holistic:
-                while cap.isOpened():
+            mediapipe_start = time.time()
+            logger.info(f"🎯 Starting MediaPipe processing...")
+            
+            with mp_holistic.Holistic(
+                min_detection_confidence=0.3,    # Lower = faster (was 0.5)
+                min_tracking_confidence=0.3,     # Lower = faster (was 0.5)
+                model_complexity=0,              # 0 = fastest, 2 = most accurate
+                static_image_mode=False,         # Optimize for video
+                smooth_landmarks=False           # Disable smoothing for speed
+            ) as holistic:
+                frame_skip = 5  # Process every 5th frame for better speed (was 3)
+                processed_frames = 0
+                max_frames_to_process = 15  # Limit total frames processed for speed
+                max_processing_time = 3.0   # Maximum 3 seconds for MediaPipe processing
+                
+                while cap.isOpened() and processed_frames < max_frames_to_process:
+                    # Check if we've exceeded max processing time
+                    if time.time() - mediapipe_start > max_processing_time:
+                        logger.info(f"⏰ Timeout: Stopping after {max_processing_time}s to maintain responsiveness")
+                        break
+                        
+                    ret, frame = cap.read()
+                    if not ret:
+                        break
                     ret, frame = cap.read()
                     if not ret:
                         break
                     
                     frame_count += 1
+                    
+                    # Skip frames for performance optimization
+                    if frame_count % frame_skip != 0:
+                        continue
+                    
+                    processed_frames += 1
                     
                     # Resize for consistency
                     frame = cv.resize(frame, (640, 480))
@@ -190,12 +255,32 @@ def process_sign_language_video(video_path):
                     
                     # Predict every SEQUENCE_LENGTH frames for real-time performance
                     if len(sequence) == SEQUENCE_LENGTH:
+                        prediction_start = time.time()
                         res = model.predict(np.expand_dims(sequence, axis=0), verbose=0)[0]
+                        prediction_time = time.time() - prediction_start
+                        
                         predictions.append(np.argmax(res))
                         confidences.append(np.max(res))
                         sequence = []
+                        
+                        logger.debug(f"🧠 Model prediction took {prediction_time:.3f}s")
+                        
+                        # Early exit if confident - more aggressive
+                        if len(predictions) >= 1 and max(confidences) > 0.75:  # Lower threshold, faster exit
+                            logger.info(f"⚡ Early exit: High confidence ({max(confidences):.2f}) reached after {processed_frames} frames")
+                            break
             
             cap.release()
+            
+            # Calculate timing
+            mediapipe_time = time.time() - mediapipe_start
+            timing_data['mediapipe_processing'] = mediapipe_time
+            timing_data['frames_processed'] = processed_frames
+            timing_data['total_frames'] = frame_count
+            timing_data['frame_skip'] = frame_skip
+            logger.info(f"🎯 MediaPipe processing completed in {mediapipe_time:.3f}s")
+            logger.info(f"📊 Processed {processed_frames}/{frame_count} frames (every {frame_skip}th frame)")
+            logger.info(f"⚡ Processing rate: {processed_frames/mediapipe_time:.1f} frames/sec")
         
         # Cleanup any converted files (none with direct WebM processing)
         for p in cleanup_paths:
@@ -204,6 +289,18 @@ def process_sign_language_video(video_path):
                     os.unlink(p)
             except Exception as e:
                 logger.warning(f"Failed to remove temp file {p}: {e}")
+        
+        # Final timing calculation
+        total_time = time.time() - start_time
+        timing_data['total_processing'] = total_time
+        
+        # Log detailed timing breakdown
+        logger.info(f"⏱️ TIMING BREAKDOWN:")
+        logger.info(f"   📹 Video Opening: {timing_data.get('video_opening', 0):.3f}s")
+        logger.info(f"   🎯 MediaPipe Processing: {timing_data.get('mediapipe_processing', 0):.3f}s") 
+        logger.info(f"   🔄 Backend Attempts: {timing_data.get('backend_attempts', 0)}")
+        logger.info(f"   🛠️  Successful Backend: {timing_data.get('successful_backend', 'unknown')}")
+        logger.info(f"   ⚡ Total Processing: {total_time:.3f}s")
         
         # Return the most common prediction or highest confidence prediction
         if predictions and confidences:
@@ -218,21 +315,23 @@ def process_sign_language_video(video_path):
             else:
                 best_prediction = "Unknown"
             
-            logger.info(f"Detected sign: {best_prediction} with confidence: {best_confidence:.2f}")
+            logger.info(f"✅ Detected sign: {best_prediction} with confidence: {best_confidence:.2f}")
             
             return {
                 "detected_sign": best_prediction,
                 "confidence": float(best_confidence),
                 "total_frames": frame_count,
-                "valid_predictions": len(predictions)
+                "valid_predictions": len(predictions),
+                "timing": timing_data  # Include timing data in response
             }
         else:
-            logger.warning("No confident predictions found")
+            logger.warning("⚠️ No confident predictions found")
             return {
                 "detected_sign": "No sign detected",
                 "confidence": 0.0,
                 "total_frames": frame_count,
-                "valid_predictions": 0
+                "valid_predictions": 0,
+                "timing": timing_data  # Include timing data in response
             }
             
     except Exception as e:
@@ -262,6 +361,12 @@ def learn():
 
 @app.route('/process', methods=['POST'])
 def process_video():
+    # 🚀 SERVER PROCESSING STARTS HERE - This is when video reaches the server
+    server_start_time = time.time()
+    endpoint_timing = {}
+    
+    logger.info(f"🔥 SERVER PROCESSING STARTED at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}")
+    
     try:
         # Check if video file is present
         if 'video' not in request.files:
@@ -286,22 +391,35 @@ def process_video():
         if file_size > MAX_FILE_SIZE:
             return jsonify({'error': 'File too large. Maximum size: 50MB'}), 400
         
-        # Log received data
-        logger.info(f"Received video: {video_file.filename}")
-        logger.info(f"Timestamp: {timestamp}")
-        logger.info(f"Duration: {duration} seconds")
-        logger.info(f"File size: {file_size / 1024:.2f} KB")
+        # Log received data with timing
+        validation_time = time.time() - server_start_time
+        endpoint_timing['validation'] = validation_time
+        logger.info(f"📨 Received video: {video_file.filename}")
+        logger.info(f"📅 Timestamp: {timestamp}")
+        logger.info(f"⏱️ Duration: {duration} seconds")
+        logger.info(f"📊 File size: {file_size / 1024:.2f} KB")
+        logger.info(f"✅ Validation completed in {validation_time:.3f}s")
         
         # Save video file temporarily with unique filename
+        save_start = time.time()
         import uuid
         file_extension = video_file.filename.rsplit('.', 1)[1].lower()
         unique_filename = f"{uuid.uuid4().hex}.{file_extension}"
         temp_video_path = os.path.join(UPLOAD_FOLDER, unique_filename)
         video_file.save(temp_video_path)
+        
+        save_time = time.time() - save_start
+        endpoint_timing['file_save'] = save_time
+        logger.info(f"💾 File saved in {save_time:.3f}s")
 
         try:
             # Process the video for sign language detection
+            processing_start = time.time()
             result = process_sign_language_video(temp_video_path)
+            processing_time = time.time() - processing_start
+            endpoint_timing['video_processing'] = processing_time
+            
+            logger.info(f"🎬 Video processing completed in {processing_time:.3f}s")
             
             # Check if there was an error during processing
             if 'error' in result:
@@ -323,6 +441,18 @@ def process_video():
                 }), status_code
             
             # Prepare response
+            total_endpoint_time = time.time() - server_start_time
+            endpoint_timing['total_endpoint'] = total_endpoint_time
+            endpoint_timing['cleanup'] = total_endpoint_time - sum([t for k, t in endpoint_timing.items() if k != 'total_endpoint'])
+            
+            # Log endpoint timing breakdown
+            logger.info(f"🚀 ENDPOINT TIMING BREAKDOWN:")
+            logger.info(f"   ✅ Validation: {endpoint_timing.get('validation', 0):.3f}s")
+            logger.info(f"   💾 File Save: {endpoint_timing.get('file_save', 0):.3f}s")
+            logger.info(f"   🎬 Video Processing: {endpoint_timing.get('video_processing', 0):.3f}s")
+            logger.info(f"   🔄 Cleanup: {endpoint_timing.get('cleanup', 0):.3f}s")
+            logger.info(f"   ⚡ Total Endpoint: {total_endpoint_time:.3f}s")
+            
             response_data = {
                 'status': 'success',
                 'message': 'Video processed successfully',
@@ -332,10 +462,14 @@ def process_video():
                 'duration': duration,
                 'processing_time': datetime.now().isoformat(),
                 'total_frames': result.get('total_frames', 0),
-                'valid_predictions': result.get('valid_predictions', 0)
+                'valid_predictions': result.get('valid_predictions', 0),
+                'timing': {
+                    'endpoint': endpoint_timing,
+                    'processing': result.get('timing', {})
+                }
             }
             
-            logger.info(f"Processing result: {result['detected_sign']} (confidence: {result['confidence']:.2f})")
+            logger.info(f"✅ Processing result: {result['detected_sign']} (confidence: {result['confidence']:.2f})")
             
             return jsonify(response_data), 200
             
