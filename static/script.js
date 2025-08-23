@@ -191,9 +191,19 @@ let videoStream = null;
         function startRecording() {
             try {
                 recordedChunks = [];
-                mediaRecorder = new MediaRecorder(videoStream, {
-                    mimeType: 'video/webm;codecs=vp9' // High quality codec
-                });
+
+                // Prefer a broadly compatible MIME type; fall back progressively
+                let mimeType = 'video/webm;codecs=vp9';
+                if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported) {
+                    if (!MediaRecorder.isTypeSupported(mimeType)) {
+                        mimeType = 'video/webm;codecs=vp8';
+                    }
+                    if (!MediaRecorder.isTypeSupported(mimeType)) {
+                        mimeType = 'video/webm';
+                    }
+                }
+
+                mediaRecorder = new MediaRecorder(videoStream, { mimeType });
 
                 mediaRecorder.ondataavailable = function (event) {
                     if (event.data.size > 0) {
@@ -301,14 +311,26 @@ let videoStream = null;
                     showTemporaryMessage(`Detected: ${result.detected_sign || 'Unknown'} (${Math.round((result.confidence || 0) * 100)}%)`, 'success');
 
                 } else {
-                    throw new Error(`Server responded with status: ${response.status}`);
+                    // Try to surface server-side error details
+                    let serverError = `Server responded with status: ${response.status}`;
+                    try {
+                        const errJson = await response.json();
+                        if (errJson && (errJson.error || errJson.message || errJson.details)) {
+                            serverError += ` - ${errJson.error || errJson.message}${errJson.details ? ' (' + errJson.details + ')' : ''}`;
+                        }
+                        // Specialized hint when decoding fails
+                        if (response.status === 415 || (errJson && /Could not open video/i.test(errJson.error || ''))) {
+                            serverError += ' | Hint: Try recording with a different browser or upload MP4. Admins can install moviepy and imageio-ffmpeg on server to enable WebM conversion.';
+                        }
+                    } catch (_) { /* ignore JSON parse errors */ }
+                    throw new Error(serverError);
                 }
 
             } catch (error) {
                 console.error('Error sending video to server:', error);
 
                 // Show error message but don't break the flow
-                showTemporaryMessage('Processing complete (server unavailable)', 'warning');
+                showTemporaryMessage(`Processing error: ${error.message}`, 'warning');
 
                 // For demo purposes, simulate a response
                 simulateServerResponse();

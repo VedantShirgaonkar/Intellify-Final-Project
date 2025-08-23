@@ -87,23 +87,53 @@ def process_sign_language_video(video_path):
     
     if model is None:
         logger.error("Model not loaded")
-        return {"detected_sign": "Error", "confidence": 0.0, "error": "Model not loaded"}
+        return {
+            "detected_sign": "Error",
+            "confidence": 0.0,
+            "error": "Model not loaded"
+        }
     
     try:
         # Variables for prediction
         sequence = []
         predictions = []
         confidences = []
+        frame_count = 0
+        cleanup_paths = []
         
         # Open video
         cap = cv.VideoCapture(video_path)
         
         if not cap.isOpened():
-            logger.error("Could not open video file")
-            return {"detected_sign": "Error", "confidence": 0.0, "error": "Could not open video"}
+            # Common on Windows for .webm; try converting to mp4 via moviepy
+            logger.warning("OpenCV could not open video. Attempting fallback conversion to MP4...")
+            try:
+                from moviepy.editor import VideoFileClip
+                tmp_mp4 = f"{os.path.splitext(video_path)[0]}-converted.mp4"
+                clip = VideoFileClip(video_path)
+                clip.write_videofile(tmp_mp4, codec="libx264", audio=False, verbose=False, logger=None)
+                clip.close()
+                cleanup_paths.append(tmp_mp4)
+                cap.release()
+                cap = cv.VideoCapture(tmp_mp4)
+            except Exception as conv_err:
+                logger.error(f"Fallback conversion failed: {conv_err}")
+                return {
+                    "detected_sign": "Error",
+                    "confidence": 0.0,
+                    "error": "Could not open video. If uploading .webm, install moviepy & imageio-ffmpeg or upload MP4.",
+                    "details": str(conv_err)
+                }
+        
+        if not cap.isOpened():
+            logger.error("Could not open video file after conversion attempt")
+            return {
+                "detected_sign": "Error",
+                "confidence": 0.0,
+                "error": "Could not open video after conversion attempt"
+            }
         
         with mp_holistic.Holistic(min_detection_confidence=0.5, min_tracking_confidence=0.5) as holistic:
-            frame_count = 0
             while cap.isOpened():
                 ret, frame = cap.read()
                 if not ret:
@@ -138,6 +168,13 @@ def process_sign_language_video(video_path):
                         confidences.append(confidence)
         
         cap.release()
+        # Cleanup any converted files
+        for p in cleanup_paths:
+            try:
+                if os.path.exists(p):
+                    os.unlink(p)
+            except Exception as e:
+                logger.warning(f"Failed to remove temp file {p}: {e}")
         
         # Return the most common prediction or highest confidence prediction
         if predictions:
@@ -165,7 +202,12 @@ def process_sign_language_video(video_path):
             
     except Exception as e:
         logger.error(f"Error processing video: {str(e)}")
-        return {"detected_sign": "Error", "confidence": 0.0, "error": str(e)}
+        return {
+            "detected_sign": "Error",
+            "confidence": 0.0,
+            "error": "Processing failed on server",
+            "details": str(e)
+        }
 
 
 @app.route('/')
@@ -228,11 +270,22 @@ def process_video():
             
             # Check if there was an error during processing
             if 'error' in result:
+                status_code = 500
+                # Differentiate common client-side issues
+                if result['error'] in [
+                    'No video file provided',
+                    'No file selected',
+                    'Invalid file type. Allowed types: webm, mp4, avi, mov',
+                    'File too large. Maximum size: 50MB'
+                ]:
+                    status_code = 400
+                elif 'Could not open video' in result['error']:
+                    status_code = 415  # Unsupported Media Type / cannot read
                 return jsonify({
-                    'error': 'Processing failed',
-                    'message': result['error'],
-                    'status': 'error'
-                }), 500
+                    'status': 'error',
+                    'error': result['error'],
+                    'details': result.get('details')
+                }), status_code
             
             # Prepare response
             response_data = {
