@@ -217,9 +217,9 @@ def process_sign_language_video(video_path):
                 static_image_mode=False,         # Optimize for video
                 smooth_landmarks=False           # Disable smoothing for speed
             ) as holistic:
-                frame_skip = 5  # Process every 5th frame for better speed (was 3)
+                frame_skip = 2  # Process every 2nd frame for better temporal continuity (was 5)
                 processed_frames = 0
-                max_frames_to_process = 15  # Limit total frames processed for speed
+                max_frames_to_process = 20  # Slightly higher since we're processing more frames
                 max_processing_time = 3.0   # Maximum 3 seconds for MediaPipe processing
                 
                 while cap.isOpened() and processed_frames < max_frames_to_process:
@@ -238,6 +238,8 @@ def process_sign_language_video(video_path):
                     frame_count += 1
                     
                     # Skip frames for performance optimization
+                    # Using frame_skip=2 maintains better temporal continuity for MediaPipe tracking
+                    # while still reducing processing load by 50%
                     if frame_count % frame_skip != 0:
                         continue
                     
