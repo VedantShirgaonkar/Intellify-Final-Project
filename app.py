@@ -101,74 +101,103 @@ def process_sign_language_video(video_path):
         frame_count = 0
         cleanup_paths = []
         
-        # Open video
-        cap = cv.VideoCapture(video_path)
+        # Open video with optimized WebM support
+        cap = None
+        backends_to_try = [
+            cv.CAP_FFMPEG,    # FFmpeg backend (best for WebM)
+            cv.CAP_GSTREAMER, # GStreamer backend
+            cv.CAP_MSMF,      # Microsoft Media Foundation
+            cv.CAP_ANY        # Default backend
+        ]
         
-        if not cap.isOpened():
-            # Common on Windows for .webm; try converting to mp4 via moviepy
-            logger.warning("OpenCV could not open video. Attempting fallback conversion to MP4...")
+        for backend in backends_to_try:
             try:
-                from moviepy.editor import VideoFileClip
-                tmp_mp4 = f"{os.path.splitext(video_path)[0]}-converted.mp4"
-                clip = VideoFileClip(video_path)
-                clip.write_videofile(tmp_mp4, codec="libx264", audio=False, verbose=False, logger=None)
-                clip.close()
-                cleanup_paths.append(tmp_mp4)
-                cap.release()
-                cap = cv.VideoCapture(tmp_mp4)
-            except Exception as conv_err:
-                logger.error(f"Fallback conversion failed: {conv_err}")
+                cap = cv.VideoCapture(video_path, backend)
+                if cap.isOpened():
+                    logger.info(f"Successfully opened WebM video with backend: {backend}")
+                    break
+                else:
+                    cap.release()
+                    cap = None
+            except Exception as e:
+                logger.debug(f"Backend {backend} failed: {e}")
+                continue
+        
+        if cap is None:
+            # Last resort: try imageio for direct WebM decoding
+            logger.warning("OpenCV backends failed. Trying imageio for direct WebM processing...")
+            try:
+                import imageio
+                reader = imageio.get_reader(video_path)
+                
+                # Process frames directly from imageio reader for real-time performance
+                with mp_holistic.Holistic(min_detection_confidence=0.5, min_tracking_confidence=0.5) as holistic:
+                    for frame in reader:
+                        # Convert from RGB to BGR for OpenCV/MediaPipe
+                        frame_bgr = cv.cvtColor(frame, cv.COLOR_RGB2BGR)
+                        frame_count += 1
+                        
+                        # Resize for consistency
+                        frame_bgr = cv.resize(frame_bgr, (640, 480))
+                        
+                        # Detection
+                        image, results = mediapipe_detection(frame_bgr, holistic)
+                        
+                        # Extract keypoints
+                        keypoints = extract_keypoints(results)
+                        sequence.append(keypoints)
+                        
+                        # Predict every SEQUENCE_LENGTH frames
+                        if len(sequence) == SEQUENCE_LENGTH:
+                            res = model.predict(np.expand_dims(sequence, axis=0), verbose=0)[0]
+                            predictions.append(np.argmax(res))
+                            confidences.append(np.max(res))
+                            sequence = []
+                    
+                reader.close()
+                
+                # Final cleanup and prediction
+                cleanup_paths = []  # No temp files with imageio
+                
+            except Exception as imageio_err:
+                logger.error(f"ImageIO fallback failed: {imageio_err}")
                 return {
                     "detected_sign": "Error",
                     "confidence": 0.0,
-                    "error": "Could not open video. If uploading .webm, install moviepy & imageio-ffmpeg or upload MP4.",
-                    "details": str(conv_err)
+                    "error": "Could not decode WebM video with any method. Try recording in a different format.",
+                    "details": str(imageio_err)
                 }
         
-        if not cap.isOpened():
-            logger.error("Could not open video file after conversion attempt")
-            return {
-                "detected_sign": "Error",
-                "confidence": 0.0,
-                "error": "Could not open video after conversion attempt"
-            }
-        
-        with mp_holistic.Holistic(min_detection_confidence=0.5, min_tracking_confidence=0.5) as holistic:
-            while cap.isOpened():
-                ret, frame = cap.read()
-                if not ret:
-                    break
-                
-                frame_count += 1
-                
-                # Resize for consistency
-                frame = cv.resize(frame, (640, 480))
-                
-                # Detection
-                image, results = mediapipe_detection(frame, holistic)
-                
-                # Extract keypoints
-                keypoints = extract_keypoints(results)
-                
-                # Append to sequence
-                sequence.append(keypoints)
-                sequence = sequence[-SEQUENCE_LENGTH:]
-                
-                if len(sequence) == SEQUENCE_LENGTH:
-                    input_seq = np.expand_dims(sequence, axis=0)  # shape (1, 30, 1530)
+        # If we successfully opened with OpenCV, process with the optimized pipeline
+        if cap is not None:
+            with mp_holistic.Holistic(min_detection_confidence=0.5, min_tracking_confidence=0.5) as holistic:
+                while cap.isOpened():
+                    ret, frame = cap.read()
+                    if not ret:
+                        break
                     
-                    # Predict
-                    res = model.predict(input_seq, verbose=0)[0]
-                    predicted_action = actions[np.argmax(res)]
-                    confidence = np.max(res)
+                    frame_count += 1
                     
-                    # Store prediction if above threshold
-                    if confidence > CONFIDENCE_THRESHOLD:
-                        predictions.append(predicted_action)
-                        confidences.append(confidence)
+                    # Resize for consistency
+                    frame = cv.resize(frame, (640, 480))
+                    
+                    # Detection
+                    image, results = mediapipe_detection(frame, holistic)
+                    
+                    # Extract keypoints
+                    keypoints = extract_keypoints(results)
+                    sequence.append(keypoints)
+                    
+                    # Predict every SEQUENCE_LENGTH frames for real-time performance
+                    if len(sequence) == SEQUENCE_LENGTH:
+                        res = model.predict(np.expand_dims(sequence, axis=0), verbose=0)[0]
+                        predictions.append(np.argmax(res))
+                        confidences.append(np.max(res))
+                        sequence = []
+            
+            cap.release()
         
-        cap.release()
-        # Cleanup any converted files
+        # Cleanup any converted files (none with direct WebM processing)
         for p in cleanup_paths:
             try:
                 if os.path.exists(p):
@@ -177,11 +206,17 @@ def process_sign_language_video(video_path):
                 logger.warning(f"Failed to remove temp file {p}: {e}")
         
         # Return the most common prediction or highest confidence prediction
-        if predictions:
+        if predictions and confidences:
             # Get the prediction with highest confidence
             best_idx = np.argmax(confidences)
-            best_prediction = predictions[best_idx]
+            best_prediction_idx = predictions[best_idx]
             best_confidence = confidences[best_idx]
+            
+            # Convert prediction index to action name
+            if best_prediction_idx < len(actions):
+                best_prediction = actions[best_prediction_idx]
+            else:
+                best_prediction = "Unknown"
             
             logger.info(f"Detected sign: {best_prediction} with confidence: {best_confidence:.2f}")
             

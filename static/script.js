@@ -320,7 +320,7 @@ let videoStream = null;
                         }
                         // Specialized hint when decoding fails
                         if (response.status === 415 || (errJson && /Could not open video/i.test(errJson.error || ''))) {
-                            serverError += ' | Hint: Try recording with a different browser or upload MP4. Admins can install moviepy and imageio-ffmpeg on server to enable WebM conversion.';
+                            serverError += ' | Note: Server now processes WebM natively for optimal real-time performance. If error persists, try recording again or check browser compatibility.';
                         }
                     } catch (_) { /* ignore JSON parse errors */ }
                     throw new Error(serverError);
