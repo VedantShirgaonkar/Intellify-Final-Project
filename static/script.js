@@ -191,9 +191,19 @@ let videoStream = null;
         function startRecording() {
             try {
                 recordedChunks = [];
-                mediaRecorder = new MediaRecorder(videoStream, {
-                    mimeType: 'video/webm;codecs=vp9' // High quality codec
-                });
+
+                // Prefer a broadly compatible MIME type; fall back progressively
+                let mimeType = 'video/webm;codecs=vp9';
+                if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported) {
+                    if (!MediaRecorder.isTypeSupported(mimeType)) {
+                        mimeType = 'video/webm;codecs=vp8';
+                    }
+                    if (!MediaRecorder.isTypeSupported(mimeType)) {
+                        mimeType = 'video/webm';
+                    }
+                }
+
+                mediaRecorder = new MediaRecorder(videoStream, { mimeType });
 
                 mediaRecorder.ondataavailable = function (event) {
                     if (event.data.size > 0) {
@@ -231,9 +241,13 @@ let videoStream = null;
                 return;
             }
 
+            // 🎬 START TIMING: From the moment camera stops
+            const cameraStopTime = performance.now();
+            console.log(`🔴 Camera stopped at ${new Date().toLocaleTimeString()}.${Date.now() % 1000}`);
+
             return new Promise((resolve) => {
                 mediaRecorder.onstop = async function () {
-                    console.log('Recording stopped, processing video...');
+                    console.log('📹 Recording stopped, processing video...');
 
                     // Show loading overlay
                     showLoadingOverlay();
@@ -241,11 +255,14 @@ let videoStream = null;
                     // Create video blob from last 30 seconds of chunks
                     const last30SecondsChunks = recordedChunks.slice(-30); // Approximate last 30 chunks
                     const blob = new Blob(last30SecondsChunks, { type: 'video/webm' });
+                    
+                    const blobCreationTime = performance.now();
+                    const blobTime = (blobCreationTime - cameraStopTime) / 1000;
 
-                    console.log(`Video blob created: ${blob.size} bytes`);
+                    console.log(`📦 Video blob created: ${blob.size} bytes in ${blobTime.toFixed(3)}s`);
 
-                    // Send to server
-                    await sendVideoToServer(blob);
+                    // Send to server with camera stop time
+                    await sendVideoToServer(blob, cameraStopTime);
 
                     // Hide loading overlay
                     hideLoadingOverlay();
@@ -258,15 +275,24 @@ let videoStream = null;
             });
         }
 
-        async function sendVideoToServer(videoBlob) {
+        async function sendVideoToServer(videoBlob, cameraStopTime) {
+            // Use camera stop time as the baseline for all measurements
+            let uploadStartTime, uploadEndTime;
+            
             try {
                 const formData = new FormData();
                 formData.append('video', videoBlob, 'sign_language_video.webm');
                 formData.append('timestamp', new Date().toISOString());
                 formData.append('duration', '30'); // 30 seconds
 
-                console.log('Sending video to server...');
+                console.log('📤 Sending video to server...');
+                console.log(`📊 Video blob size: ${(videoBlob.size / 1024).toFixed(2)} KB`);
 
+                // Record upload start time
+                uploadStartTime = performance.now();
+                const preUploadTime = (uploadStartTime - cameraStopTime) / 1000;
+                console.log(`⚡ Pre-upload preparation: ${preUploadTime.toFixed(3)}s`);
+                
                 const response = await fetch('/process', {
                     method: 'POST',
                     body: formData,
@@ -275,9 +301,44 @@ let videoStream = null;
                     }
                 });
 
+                // Record when server starts responding
+                uploadEndTime = performance.now();
+                const serverResponseTime = (uploadEndTime - uploadStartTime) / 1000;
+                const totalTimeToResponse = (uploadEndTime - cameraStopTime) / 1000;
+                console.log(`🌐 Server response received in ${serverResponseTime.toFixed(3)}s`);
+
                 if (response.ok) {
                     const result = await response.json();
-                    console.log('Server response:', result);
+                    
+                    // Calculate complete timing from camera stop
+                    const completionTime = performance.now();
+                    const totalTimeFromCameraStop = (completionTime - cameraStopTime) / 1000;
+                    const jsonParsingTime = (completionTime - uploadEndTime) / 1000;
+                    
+                    console.log('🎯 COMPLETE TIMING FROM CAMERA STOP:');
+                    console.log(`   ⚡ Pre-upload prep: ${((uploadStartTime - cameraStopTime) / 1000).toFixed(3)}s`);
+                    console.log(`   🌐 Network + Server: ${serverResponseTime.toFixed(3)}s`);
+                    console.log(`   📄 JSON parsing: ${jsonParsingTime.toFixed(3)}s`);
+                    console.log(`   🏁 TOTAL FROM CAMERA STOP: ${totalTimeFromCameraStop.toFixed(3)}s`);
+                    
+                    // Log server-side timing breakdown
+                    if (result.timing) {
+                        console.log('🔍 Server Processing Breakdown:');
+                        if (result.timing.endpoint) {
+                            console.log(`   📝 Validation: ${result.timing.endpoint.validation?.toFixed(3) || 0}s`);
+                            console.log(`   💾 File Save: ${result.timing.endpoint.file_save?.toFixed(3) || 0}s`);
+                            console.log(`   🎬 Video Processing: ${result.timing.endpoint.video_processing?.toFixed(3) || 0}s`);
+                            console.log(`   ⚡ Total Server Time: ${result.timing.endpoint.total_endpoint?.toFixed(3) || 0}s`);
+                        }
+                        if (result.timing.processing) {
+                            console.log(`   📹 Video Opening: ${result.timing.processing.video_opening?.toFixed(3) || 0}s`);
+                            console.log(`   🎯 MediaPipe: ${result.timing.processing.mediapipe_processing?.toFixed(3) || 0}s`);
+                            console.log(`   🛠️  Backend: ${result.timing.processing.successful_backend || 'unknown'}`);
+                            console.log(`   📊 Frames: ${result.timing.processing.frames_processed || 0}/${result.timing.processing.total_frames || 0}`);
+                        }
+                    }
+                    
+                    console.log('✅ Server response:', result);
 
                     // Update UI with server response if available
                     if (result.detected_sign) {
@@ -291,24 +352,36 @@ let videoStream = null;
 
                     // Log additional model information if available
                     if (result.total_frames) {
-                        console.log(`Processed ${result.total_frames} frames`);
+                        console.log(`📊 Processed ${result.total_frames} frames`);
                     }
                     if (result.valid_predictions) {
-                        console.log(`Found ${result.valid_predictions} confident predictions`);
+                        console.log(`🎯 Found ${result.valid_predictions} confident predictions`);
                     }
 
-                    // Show success message
-                    showTemporaryMessage(`Detected: ${result.detected_sign || 'Unknown'} (${Math.round((result.confidence || 0) * 100)}%)`, 'success');
+                    // Show success message with total time from camera stop
+                    showTemporaryMessage(`Detected: ${result.detected_sign || 'Unknown'} (${Math.round((result.confidence || 0) * 100)}%) - ${totalTimeFromCameraStop.toFixed(2)}s total`, 'success');
 
                 } else {
-                    throw new Error(`Server responded with status: ${response.status}`);
+                    // Try to surface server-side error details
+                    let serverError = `Server responded with status: ${response.status}`;
+                    try {
+                        const errJson = await response.json();
+                        if (errJson && (errJson.error || errJson.message || errJson.details)) {
+                            serverError += ` - ${errJson.error || errJson.message}${errJson.details ? ' (' + errJson.details + ')' : ''}`;
+                        }
+                        // Specialized hint when decoding fails
+                        if (response.status === 415 || (errJson && /Could not open video/i.test(errJson.error || ''))) {
+                            serverError += ' | Note: Server now processes WebM natively for optimal real-time performance. If error persists, try recording again or check browser compatibility.';
+                        }
+                    } catch (_) { /* ignore JSON parse errors */ }
+                    throw new Error(serverError);
                 }
 
             } catch (error) {
                 console.error('Error sending video to server:', error);
 
                 // Show error message but don't break the flow
-                showTemporaryMessage('Processing complete (server unavailable)', 'warning');
+                showTemporaryMessage(`Processing error: ${error.message}`, 'warning');
 
                 // For demo purposes, simulate a response
                 simulateServerResponse();
