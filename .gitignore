@@ -1,6 +1,6 @@
 venv/
 __pycache__/
-*.npy
+#*.npy
 *.h5
 ASL-Implementation/asl_dataset/
 *.ipynb_checkpoints
