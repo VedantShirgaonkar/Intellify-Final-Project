@@ -28,4 +28,4 @@ archive
 example_loggers
 
 *.jpg
-*.pt
+*.ptpretrained/
