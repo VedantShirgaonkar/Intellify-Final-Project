@@ -110,7 +110,7 @@ if __name__ == '__main__':
                         epoch_progress.update(epoch_task, advance=0, test_loss=round(test_epoch_loss/test_batches,5))
                 
                 # Save checkpoints
-                if epoch % 10 == 0 and epoch != 0: 
+                if epoch % 20 == 0 and epoch != 0: 
                     checkpoint_path = f"checkpoints/{epoch}_model.pt"
                     save(model.state_dict(), checkpoint_path)
                     training_handler.save_checkpoint_status(checkpoint_path, epoch)

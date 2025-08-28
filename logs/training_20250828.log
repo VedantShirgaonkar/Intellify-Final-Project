@@ -1,0 +1,2 @@
+2025-08-28 16:03:05,202 - training - ERROR - [error]Training error at epoch 0, batch 53: cdist only supports at least 2D tensors, X2 got: 1D[/error]
+2025-08-28 16:03:05,209 - training - ERROR - [error]Batch targets: [{'labels': tensor([], dtype=torch.int64), 'boxes': tensor([])}, {'labels': tensor([24]), 'boxes': tensor([[0.5938, 0.7977, 0.1979, 0.3519]])}, {'labels': tensor([9]), 'boxes': tensor([[0.3443, 0.2717, 0.1951, 0.4058]])}, {'labels': tensor([24]), 'boxes': tensor([[0.1751, 0.6221, 0.3502, 0.7557]])}][/error]

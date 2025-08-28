@@ -1,1 +1,4 @@
 2025-08-28 11:00:15,194 - model - ERROR - [error]Failed to load checkpoint: invalid load key, 'v'.[/error]
+2025-08-28 16:13:56,108 - model - ERROR - [error]Failed to load checkpoint: Error(s) in loading state_dict for DETR:
+	size mismatch for linear_class.weight: copying a param with shape torch.Size([4, 256]) from checkpoint, the shape in current model is torch.Size([28, 256]).
+	size mismatch for linear_class.bias: copying a param with shape torch.Size([4]) from checkpoint, the shape in current model is torch.Size([28]).[/error]

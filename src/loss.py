@@ -57,6 +57,13 @@ class HungarianMatcher(nn.Module):
             tgt_labels = target["labels"].to(torch.long)   # [num_targets]
             tgt_boxes = target["boxes"].to(batch_boxes.dtype)  # [num_targets, 4]
             
+            # Handle empty targets (no objects in image)
+            if len(tgt_labels) == 0:
+                # No targets, so no matching needed
+                indices.append((torch.as_tensor([], dtype=torch.int64), 
+                              torch.as_tensor([], dtype=torch.int64)))
+                continue
+            
             # Compute cost matrix for this batch only
             # cost_class[i, j] = -probability that query i predicts class of target j
             cost_class = -batch_prob[:, tgt_labels]  # [num_queries, num_targets]
@@ -126,6 +133,16 @@ class DETRLoss(nn.Module):
         """
         assert 'pred_boxes' in yhat
         idx = self.get_matched_query_indices(indices)
+        
+        # Handle case where no boxes are matched
+        if len(idx[0]) == 0:  # No matched predictions
+            device = yhat['pred_boxes'].device
+            losses = {
+                'loss_bbox': torch.tensor(0.0, device=device),
+                'loss_giou': torch.tensor(0.0, device=device)
+            }
+            return losses
+            
         src_boxes = yhat['pred_boxes'][idx]
         target_boxes = torch.cat([t['boxes'][i] for t, (_, i) in zip(y, indices)], dim=0)
 

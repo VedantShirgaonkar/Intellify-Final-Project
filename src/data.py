@@ -6,6 +6,8 @@ from PIL import Image
 import albumentations as A
 import numpy as np
 from colorama import Fore 
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend
 from matplotlib import pyplot as plt 
 from utils.boxes import rescale_bboxes, stacker
 from utils.setup import get_classes
@@ -99,6 +101,13 @@ class DETRData(Dataset):
             ], bbox_params=A.BboxParams(format='yolo', label_fields=['class_labels'])
         )
         
+        # Fallback transform without bbox constraints if all attempts fail
+        fallback_transform = A.Compose([
+            A.Resize(224,224),
+            A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+            A.ToTensorV2()
+        ])
+        
         for attempt in range(max_attempts):
             try:
                 transformed = self.transform(image=image, bboxes=bboxes, class_labels=labels)
@@ -108,7 +117,9 @@ class DETRData(Dataset):
             except:
                 continue
         
-        return {'image': image, 'bboxes': bboxes, 'class_labels': labels}
+        # If all attempts fail, apply fallback transform and return with original bboxes
+        fallback_result = fallback_transform(image=image)
+        return {'image': fallback_result['image'], 'bboxes': bboxes, 'class_labels': labels}
 
     def __len__(self): 
         return len(self.labels) 
@@ -143,6 +154,10 @@ class DETRData(Dataset):
         augmented_bounding_boxes = np.array(augmented['bboxes'])
         augmented_classes = augmented['class_labels']
 
+        # Ensure image is a proper tensor
+        if isinstance(augmented_img_tensor, np.ndarray):
+            augmented_img_tensor = torch.from_numpy(augmented_img_tensor).float()
+        
         labels = torch.tensor(augmented_classes, dtype=torch.long)  
         boxes = torch.tensor(augmented_bounding_boxes, dtype=torch.float32)
         return augmented_img_tensor, {'labels': labels, 'boxes': boxes}
@@ -170,4 +185,6 @@ if __name__ == '__main__':
                 ax.text(xmin, ymin, text, fontsize=15, bbox=dict(facecolor='yellow', alpha=0.5))
 
     fig.tight_layout() 
-    plt.show()     
+    plt.savefig('data_visualization.png', dpi=150, bbox_inches='tight')
+    print(f"Visualization saved as 'data_visualization.png'")
+    # plt.show()  # Commented out to avoid interactive display     
