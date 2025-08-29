@@ -1,0 +1,117 @@
+{
+  "categories": [
+    {
+      "id": 0,
+      "name": "again"
+    },
+    {
+      "id": 1,
+      "name": "big"
+    },
+    {
+      "id": 2,
+      "name": "book"
+    },
+    {
+      "id": 3,
+      "name": "deaf"
+    },
+    {
+      "id": 4,
+      "name": "eat"
+    },
+    {
+      "id": 5,
+      "name": "friend"
+    },
+    {
+      "id": 6,
+      "name": "go"
+    },
+    {
+      "id": 7,
+      "name": "hello"
+    },
+    {
+      "id": 8,
+      "name": "help"
+    },
+    {
+      "id": 9,
+      "name": "home"
+    },
+    {
+      "id": 10,
+      "name": "i"
+    },
+    {
+      "id": 11,
+      "name": "iloveyou"
+    },
+    {
+      "id": 12,
+      "name": "like"
+    },
+    {
+      "id": 13,
+      "name": "more"
+    },
+    {
+      "id": 14,
+      "name": "need"
+    },
+    {
+      "id": 15,
+      "name": "no"
+    },
+    {
+      "id": 16,
+      "name": "play"
+    },
+    {
+      "id": 17,
+      "name": "see"
+    },
+    {
+      "id": 18,
+      "name": "small"
+    },
+    {
+      "id": 19,
+      "name": "thankyou"
+    },
+    {
+      "id": 20,
+      "name": "want"
+    },
+    {
+      "id": 21,
+      "name": "water"
+    },
+    {
+      "id": 22,
+      "name": "what"
+    },
+    {
+      "id": 23,
+      "name": "where"
+    },
+    {
+      "id": 24,
+      "name": "work"
+    },
+    {
+      "id": 25,
+      "name": "yes"
+    },
+    {
+      "id": 26,
+      "name": "you"
+    }
+  ],
+  "info": {
+    "year": 2025,
+    "version": "1.0",
+    "contributor": "Label Studio"
+  }
+}
