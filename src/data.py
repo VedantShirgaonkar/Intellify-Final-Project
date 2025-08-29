@@ -6,8 +6,6 @@ from PIL import Image
 import albumentations as A
 import numpy as np
 from colorama import Fore 
-import matplotlib
-matplotlib.use('Agg')  # Use non-interactive backend
 from matplotlib import pyplot as plt 
 from utils.boxes import rescale_bboxes, stacker
 from utils.setup import get_classes
@@ -24,13 +22,6 @@ class DETRData(Dataset):
         self.images_path = os.path.join(self.path, 'images')
         self.label_files = os.listdir(self.labels_path) 
         self.labels = list(filter(lambda x: x.endswith('.txt'), self.label_files))
-        self.id2name = self._infer_id_to_name()
-        # Make a list so you can index with ids; fill missing slots if any
-        if self.id2name:
-            max_id = max(self.id2name.keys())
-            self.class_names = [self.id2name.get(i, f"class_{i}") for i in range(max_id + 1)]
-        else:
-            self.class_names = []
         self.train = train
         
         # Initialize logger
@@ -43,9 +34,17 @@ class DETRData(Dataset):
             "Mode": "Training" if train else "Testing",
             "Total Samples": len(self.labels),
             "Images Path": self.images_path,
-            "Labels Path": self.labels_path
+            "Labels Path": self.labels_path,
+            "First Label File": self.labels[0] if self.labels else "No labels found",
+            "First Image Name": os.path.splitext(self.labels[0])[0] + ".jpg" if self.labels else "No images found"
         }
         self.data_handler.log_dataset_stats(dataset_info)
+        
+        # Verify paths exist
+        if not os.path.exists(self.images_path):
+            self.logger.error(f"Images directory not found: {self.images_path}")
+        if not os.path.exists(self.labels_path):
+            self.logger.error(f"Labels directory not found: {self.labels_path}")
         
         # Log transforms information
         transform_list = [
@@ -57,36 +56,7 @@ class DETRData(Dataset):
             "Normalize (ImageNet stats)",
             "Convert to Tensor"
         ]
-        self.data_handler.log_transform_info(transform_list) 
-
-
-    def _label_to_image_stem(self, label_fname: str) -> str:
-        # maps "0a5a...-again-a60b...txt" -> "again-a60b...-...-...-..."
-        return "-".join(label_fname.split("-")[1:]).replace(".txt", "")
-
-    def _infer_id_to_name(self) -> dict:
-        """Infer {class_id: class_name} by pairing each label file with its image
-        name (which starts with the class name). Warn on conflicts."""
-        id2name = {}
-        for lf in self.labels:
-            img_stem = self._label_to_image_stem(lf)  # e.g., "again-9a17..."
-            class_name_from_fname = img_stem.split("-")[0]  # "again"
-            with open(os.path.join(self.labels_path, lf), "r") as f:
-                for line in f:
-                    parts = line.strip().split()
-                    if not parts:
-                        continue
-                    cid = int(parts[0])
-                    if cid not in id2name:
-                        id2name[cid] = class_name_from_fname
-                    elif id2name[cid] != class_name_from_fname:
-                        self.logger.warning(
-                            f"Class id {cid} maps to both '{id2name[cid]}' and "
-                            f"'{class_name_from_fname}' (from {lf})."
-                        )
-                    break  # only need the first bbox line
-        return id2name
-
+        self.data_handler.log_transform_info(transform_list)             
 
     def safe_transform(self, image, bboxes, labels, max_attempts=50):
         self.transform = A.Compose(
@@ -101,13 +71,6 @@ class DETRData(Dataset):
             ], bbox_params=A.BboxParams(format='yolo', label_fields=['class_labels'])
         )
         
-        # Fallback transform without bbox constraints if all attempts fail
-        fallback_transform = A.Compose([
-            A.Resize(224,224),
-            A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-            A.ToTensorV2()
-        ])
-        
         for attempt in range(max_attempts):
             try:
                 transformed = self.transform(image=image, bboxes=bboxes, class_labels=labels)
@@ -117,59 +80,60 @@ class DETRData(Dataset):
             except:
                 continue
         
-        # If all attempts fail, apply fallback transform and return with original bboxes
-        fallback_result = fallback_transform(image=image)
-        return {'image': fallback_result['image'], 'bboxes': bboxes, 'class_labels': labels}
+        return {'image': image, 'bboxes': bboxes, 'class_labels': labels}
 
     def __len__(self): 
         return len(self.labels) 
 
     def __getitem__(self, idx): 
         self.label_path = os.path.join(self.labels_path, self.labels[idx]) 
+        label_file = self.labels[idx]
         
-        # Remove the first UUID prefix in the label filename
-        # Example: 0a5a68b0-again-a60bd6d2-8352-11f0-8ed9-371d0d0485df.txt
-        # becomes: again-a60bd6d2-8352-11f0-8ed9-371d0d0485df.jpg
-        self.image_name = self._label_to_image_stem(self.labels[idx])
-        self.image_path = os.path.join(self.images_path, f"{self.image_name}.jpg")
+        # Handle different naming conventions
+        if 'train_dataset' in self.path:
+            # For train_dataset, use base name directly
+            self.image_name = os.path.splitext(label_file)[0]
+        else:
+            # For original data structure (data/train and data/test)
+            # Remove the UUID prefix if it exists
+            parts = label_file.split('-', 1)
+            self.image_name = parts[1].split('.')[0] if len(parts) > 1 else parts[0].split('.')[0]
+            
+        self.image_path = os.path.join(self.images_path, f'{self.image_name}.jpg')
         
-        # --- Load image
-        img = Image.open(self.image_path).convert("RGB")
-
-        # --- Load label annotations
+        if not os.path.exists(self.image_path):
+            self.logger.error(f"Image not found: {self.image_path}")
+            self.logger.error(f"Label file: {label_file}")
+            raise FileNotFoundError(f"Image not found: {self.image_path}")
+            
+        img = Image.open(self.image_path)
         with open(self.label_path, 'r') as f: 
             annotations = f.readlines()
         class_labels = []
         bounding_boxes = []
         for annotation in annotations: 
-            parts = annotation.strip().split()
-            class_labels.append(parts[0])
-            bounding_boxes.append(parts[1:])
+            annotation = annotation.split('\n')[:-1][0].split(' ')
+            class_labels.append(annotation[0]) 
+            bounding_boxes.append(annotation[1:])
         class_labels = np.array(class_labels).astype(int) 
         bounding_boxes = np.array(bounding_boxes).astype(float) 
 
-        # --- Apply transforms
         augmented = self.safe_transform(image=np.array(img), bboxes=bounding_boxes, labels=class_labels)
         augmented_img_tensor = augmented['image']
         augmented_bounding_boxes = np.array(augmented['bboxes'])
         augmented_classes = augmented['class_labels']
 
-        # Ensure image is a proper tensor
-        if isinstance(augmented_img_tensor, np.ndarray):
-            augmented_img_tensor = torch.from_numpy(augmented_img_tensor).float()
-        
         labels = torch.tensor(augmented_classes, dtype=torch.long)  
         boxes = torch.tensor(augmented_bounding_boxes, dtype=torch.float32)
         return augmented_img_tensor, {'labels': labels, 'boxes': boxes}
 
 if __name__ == '__main__':
-    dataset = DETRData('data/train', train=True) 
+    dataset = DETRData('data/train_dataset', train=False) 
     dataloader = DataLoader(dataset, collate_fn=stacker, batch_size=4, drop_last=True)
 
     X, y = next(iter(dataloader))
     print(Fore.LIGHTCYAN_EX + str(y) + Fore.RESET) 
-    CLASSES = dataset.class_names
-    print(CLASSES)
+    CLASSES = get_classes() 
     fig, ax = plt.subplots(2,2) 
     axs = ax.flatten()
     for idx, (img, annotations, ax) in enumerate(zip(X, y, axs)): 
@@ -185,6 +149,4 @@ if __name__ == '__main__':
                 ax.text(xmin, ymin, text, fontsize=15, bbox=dict(facecolor='yellow', alpha=0.5))
 
     fig.tight_layout() 
-    plt.savefig('data_visualization.png', dpi=150, bbox_inches='tight')
-    print(f"Visualization saved as 'data_visualization.png'")
-    # plt.show()  # Commented out to avoid interactive display     
+    plt.show()     

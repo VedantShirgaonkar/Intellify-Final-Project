@@ -28,7 +28,7 @@ if __name__ == '__main__':
     # Enable cuDNN autotuner for better performance
     torch.backends.cudnn.benchmark = True
     
-    train_dataset = DETRData('data/train') 
+    train_dataset = DETRData('data/train_dataset') 
     train_dataloader = DataLoader(train_dataset, batch_size=4, collate_fn=stacker, drop_last=True, pin_memory=True) 
 
     test_dataset = DETRData('data/test', train=False) 
@@ -38,7 +38,7 @@ if __name__ == '__main__':
     model = DETR(num_classes=num_classes)
     # Move model to GPU
     model = model.to(device)
-    # model.load_pretrained('pretrained/4426_model.pt')  # Commented out due to class count mismatch
+    model.load_pretrained('checkpoints/999_model.pt')  # Commented out due to class count mismatch
     model.log_model_info()
     model.train() 
 
@@ -52,10 +52,10 @@ if __name__ == '__main__':
 
     train_batches = len(train_dataloader)
     test_batches = len(test_dataloader)
-    epochs = 1000
+    epochs = 10000
     
     # Create checkpoints directory if it doesn't exist
-    os.makedirs("checkpoints", exist_ok=True)
+    os.makedirs("checkpointsnew", exist_ok=True)
     
     # Log training configuration
     training_config = {
@@ -143,10 +143,10 @@ if __name__ == '__main__':
                         epoch_progress.update(epoch_task, advance=0, test_loss=round(test_epoch_loss/test_batches,5))
                 
                 # Save checkpoints
-                if epoch % 20 == 0 and epoch != 0: 
-                    checkpoint_path = f"checkpoints/{epoch}_model.pt"
+                if epoch % 200 == 0 and epoch != 0: 
+                    checkpoint_path = f"checkpointsnew/{epoch}_model.pt"
                     save(model.state_dict(), checkpoint_path)
                     training_handler.save_checkpoint_status(checkpoint_path, epoch)
             
     # Final save
-    save(model.state_dict(), f"checkpoints/{epoch}_model.pt")
+    save(model.state_dict(), f"checkpointsnew/{epoch}_model.pt")

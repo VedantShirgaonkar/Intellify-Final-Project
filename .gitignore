@@ -26,5 +26,6 @@ LossAnalysis.ipynb
 .ipynb_checkpoints
 archive
 example_loggers
+checkpointsnew/
 
 *.ptpretrained/
