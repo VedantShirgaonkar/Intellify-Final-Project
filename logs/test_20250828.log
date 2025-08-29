@@ -1,0 +1,4 @@
+2025-08-28 19:50:34,219 - test - INFO - [test]🧪 Running inference on test batch...[/test]
+2025-08-28 19:51:09,017 - test - INFO - [test]🧪 Running inference on test batch...[/test]
+2025-08-28 19:52:47,212 - test - INFO - [test]🧪 Successfully loaded model checkpoint[/test]
+2025-08-28 19:52:47,269 - test - INFO - [test]🧪 Running inference on test batch...[/test]
