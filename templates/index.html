@@ -81,6 +81,38 @@
         </div>
     </section>
 
+    <!-- Reverse Translation (Gloss ➜ Video) Section -->
+    <section class="demo-section" style="padding-top: 0;">
+        <div class="container">
+            <div class="section-header">
+                <h2 class="section-title">Reverse Translation</h2>
+                <p class="section-subtitle">Enter English sentences to generate sign language videos</p>
+            </div>
+            <div class="demo-container">
+                <div class="demo-right" style="width:100%;">
+                    <div class="translation-card">
+                        <div class="card-header">
+                            <h3>English Sentence</h3>
+                        </div>
+                        <div class="translation-display" style="display:flex; flex-direction:column; gap:12px;">
+                            <input id="glossTokensInput" type="text" class="text-input" placeholder="Enter English sentence, e.g.: We are going to college for exam" />
+                            <div style="display:flex; gap:10px;">
+                                <button class="control-button accent" onclick="composeReverseVideo()">
+                                    <i class="fas fa-video"></i> Build Video
+                                </button>
+                                <button class="control-button secondary" onclick="fillSampleGloss()">
+                                    <i class="fas fa-magic"></i> Sample
+                                </button>
+                            </div>
+                            <video id="reverseVideo" controls style="width:100%; border-radius:12px; background:#000; display:none;"></video>
+                            <div id="reverseMeta" class="refined-gloss-text"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
     <!-- Demo Section -->
     <section id="demo" class="demo-section">
         <div class="container">

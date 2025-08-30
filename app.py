@@ -1,17 +1,14 @@
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, send_from_directory, Response
 from flask_cors import CORS
+from datetime import datetime
+import shutil  # for moving generated videos
 import os
 import tempfile
-from datetime import datetime
 import logging
-from flask import Flask, request, jsonify, render_template
-from flask_cors import CORS
-from datetime import datetime
 import io
-import os
-import logging
 import time
 import traceback
+import json
 
 # ML / CV deps
 import numpy as np
@@ -19,8 +16,11 @@ import cv2 as cv
 import torch
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
+import traceback
 
-from revtrans import gloss_to_english_llm
+
+# Avoid importing revtrans at module import time because it asserts OPENAI_API_KEY.
+# We'll import within request handlers when needed.
 
 # Project model/utils
 from model import DETR
@@ -53,6 +53,10 @@ logger = logging.getLogger(__name__)
 # Configuration
 ALLOWED_IMAGE_MIME = {"image/jpeg", "image/png"}
 CONFIDENCE_THRESHOLD = 0.8
+
+# Output directory for generated artifacts (e.g., composed videos)
+OUTPUT_DIR = os.path.join(os.path.dirname(__file__), 'outputs')
+os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 # Model configuration (.pt)
 PT_MODEL_PATH = 'pretrained/4426_model.pt'
@@ -250,8 +254,15 @@ def process_confirmed_words():
         # Log the received confirmed words for debugging
         logger.info("Received confirmed words: %s", confirmed_words)
 
-        # Call the gloss_to_english_llm function
-        gloss = gloss_to_english_llm(confirmed_words)
+        # Lazy import to avoid startup failures when no API key is present
+        try:
+            from revtrans import gloss_to_english_llm as _gloss_to_english_llm
+        except Exception as ie:
+            logger.error("revtrans import failed: %s", ie)
+            return jsonify({'error': 'LLM module unavailable. Set OPENAI_API_KEY.'}), 503
+
+        # Call the LLM to convert tokens to an English sentence
+        gloss = _gloss_to_english_llm(confirmed_words)
 
         # Return the refined output
         return jsonify({'gloss': gloss}), 200
@@ -263,6 +274,282 @@ def process_confirmed_words():
         return jsonify({'error': 'Internal server error'}), 500
 
 
+@app.route('/outputs/<path:filename>', methods=['GET'])
+def serve_output_file(filename: str):
+    """Serve generated files from outputs/ with basic HTTP Range support for videos.
+
+    Many browsers request video files with Range headers. If we detect a Range request,
+    return a 206 Partial Content response with appropriate headers; otherwise fall back
+    to a normal send_from_directory.
+    """
+    full_path = os.path.join(OUTPUT_DIR, filename)
+    if not os.path.isfile(full_path):
+        return jsonify({'error': 'File not found'}), 404
+
+    range_header = request.headers.get('Range', None)
+    if not range_header:
+        resp = send_from_directory(OUTPUT_DIR, filename, as_attachment=False)
+        # Advertise support for ranges to help the <video> element
+        try:
+            resp.headers.add('Accept-Ranges', 'bytes')
+        except Exception:
+            pass
+        return resp
+
+    # Parse Range header: e.g. "bytes=START-END"
+    try:
+        # Expected format 'bytes=start-end'
+        units, rng = range_header.split('=', 1)
+        if units.strip().lower() != 'bytes':
+            raise ValueError('Only bytes unit is supported')
+        start_str, end_str = (rng.split('-', 1) + [''])[:2]
+        file_size = os.path.getsize(full_path)
+        start = int(start_str) if start_str else 0
+        end = int(end_str) if end_str else file_size - 1
+        start = max(0, start)
+        end = min(end, file_size - 1)
+        length = (end - start) + 1
+
+        with open(full_path, 'rb') as f:
+            f.seek(start)
+            data = f.read(length)
+
+        resp = Response(data, 206, mimetype='video/mp4', direct_passthrough=True)
+        resp.headers.add('Content-Range', f'bytes {start}-{end}/{file_size}')
+        resp.headers.add('Accept-Ranges', 'bytes')
+        resp.headers.add('Content-Length', str(length))
+        return resp
+    except Exception as e:
+        logger.warning('Range request failed, falling back to full file: %s', e)
+        return send_from_directory(OUTPUT_DIR, filename, as_attachment=False)
+
+
+def _list_available_video_tokens() -> list[str]:
+    """Return available token basenames from the videos directory (without extension)."""
+    base_vid_dir = os.path.join(os.path.dirname(__file__), 'videos')
+    if not os.path.isdir(base_vid_dir):
+        return []
+    toks = []
+    for name in os.listdir(base_vid_dir):
+        if name.lower().endswith('.mp4'):
+            toks.append(os.path.splitext(name)[0].lower())
+    return sorted(set(toks))
+
+
+def _text_to_gloss_tokens(text: str) -> list[str]:
+    """Convert a free-form sentence into a list of gloss-like tokens, aligned to available clips.
+
+    Strategy:
+    - Lowercase and strip punctuation
+    - Simple stemming for common endings (ing/ed/s)
+    - Drop stopwords
+    - Keep only tokens that have a matching videos/<token>.mp4 clip
+    """
+    if not text:
+        return []
+    import re
+
+    # Normalize
+    s = text.strip().lower()
+    s = re.sub(r"[^a-z0-9'\s]", " ", s)
+    words = [w for w in re.split(r"\s+", s) if w]
+
+    # Simple contractions map and lemmatization hints
+    contr = {
+        "i'm": "i", "im": "i", "we're": "we", "you're": "you", "they're": "they",
+        "can't": "cannot", "won't": "will", "don't": "do", "doesn't": "do", "didn't": "do",
+    }
+    words = [contr.get(w, w) for w in words]
+
+    # Basic stemming try
+    def stem(w: str) -> str:
+        for suf in ("ing", "ed", "es", "s"):
+            if len(w) > 3 and w.endswith(suf):
+                return w[: -len(suf)]
+        return w
+
+    # Stopwords (keep short list)
+    stop = {"the", "a", "an", "is", "am", "are", "to", "at", "in", "on", "for", "of", "and", "or", "with", "be", "was", "were", "will", "would", "should", "could", "have", "has", "had", "do", "did", "does", "that", "this", "these", "those", "it"}
+
+    candidates = [stem(w) for w in words if w not in stop]
+
+    avail = set(_list_available_video_tokens())
+    filtered = [w for w in candidates if w in avail]
+    # If nothing matched, return the raw candidates to allow caller to handle missing clips
+    return filtered or candidates
+
+
+def compose_video_from_gloss(gloss_tokens):
+    """Concatenate per-token mp4 clips from videos/<token>.mp4 into a single mp4 in outputs.
+
+    Returns (filename, meta) where filename is the saved file name under OUTPUT_DIR.
+    """
+    # Map tokens to available video files
+    base_vid_dir = os.path.join(os.path.dirname(__file__), 'videos')
+    if not os.path.exists(base_vid_dir):
+        raise FileNotFoundError(f"Videos directory not found: {base_vid_dir}")
+    
+    files = []
+    missing = []
+    for t in gloss_tokens:
+        name = str(t).strip().lower()
+        if not name:
+            continue
+        cand = os.path.join(base_vid_dir, f"{name}.mp4")
+        if os.path.exists(cand):
+            files.append(cand)
+            logger.info(f"Found video for token '{name}': {cand}")
+        else:
+            missing.append(name)
+            logger.warning(f"Missing video for token '{name}': {cand}")
+
+    if not files:
+        available_tokens = _list_available_video_tokens()
+        raise FileNotFoundError(f"No matching video clips found for tokens: {gloss_tokens}. Available tokens: {available_tokens[:10]}...")
+
+    # Open first clip to get properties
+    first = cv.VideoCapture(files[0])
+    if not first.isOpened():
+        raise RuntimeError(f"Could not open first video clip: {files[0]}")
+    fps = first.get(cv.CAP_PROP_FPS) or 25.0
+    width = int(first.get(cv.CAP_PROP_FRAME_WIDTH) or 640)
+    height = int(first.get(cv.CAP_PROP_FRAME_HEIGHT) or 480)
+    first.release()
+    
+    logger.info(f"Video properties: {width}x{height}, {fps} FPS")
+
+    # Prepare writer
+    out_name = f"reverse_{datetime.utcnow().strftime('%Y%m%d_%H%M%S_%f')}.mp4"
+    out_path = os.path.join(OUTPUT_DIR, out_name)
+    
+    # Use H.264 codec which is universally supported by browsers
+    fourcc = cv.VideoWriter_fourcc(*'avc1')  # H.264 codec
+    writer = cv.VideoWriter(out_path, fourcc, fps, (width, height))
+    
+    if not writer.isOpened():
+        # Try alternative H.264 codec identifier
+        fourcc = cv.VideoWriter_fourcc(*'H264')
+        writer = cv.VideoWriter(out_path, fourcc, fps, (width, height))
+        
+    if not writer.isOpened():
+        # Final fallback to MP4V
+        fourcc = cv.VideoWriter_fourcc(*'mp4v')
+        writer = cv.VideoWriter(out_path, fourcc, fps, (width, height))
+        
+    if not writer.isOpened():
+        raise RuntimeError(f"Could not create output video writer at {out_path}")
+    
+    logger.info(f"Created video writer: {out_path} with codec: {fourcc}")
+
+    total_frames = 0
+    processed_files = 0
+    try:
+        for fp in files:
+            logger.info(f"Processing video file: {fp}")
+            cap = cv.VideoCapture(fp)
+            if not cap.isOpened():
+                logger.warning("Skip unreadable clip: %s", fp)
+                continue
+            
+            file_frames = 0
+            while True:
+                ok, frame = cap.read()
+                if not ok:
+                    break
+                # Ensure frame is the right size
+                if frame.shape[1] != width or frame.shape[0] != height:
+                    frame = cv.resize(frame, (width, height))
+                writer.write(frame)
+                total_frames += 1
+                file_frames += 1
+            cap.release()
+            processed_files += 1
+            logger.info(f"Processed {file_frames} frames from {os.path.basename(fp)}")
+            
+        # If we have no frames, add a placeholder black frame to prevent empty video
+        if total_frames == 0:
+            logger.warning("No frames processed, adding placeholder frame")
+            black_frame = np.zeros((height, width, 3), dtype=np.uint8)
+            for _ in range(int(fps)):  # 1 second of black frames
+                writer.write(black_frame)
+                total_frames += 1
+    finally:
+        writer.release()
+        logger.info(f"Video composition complete: {total_frames} total frames from {processed_files} files")
+
+    meta = { 'fps': fps, 'width': width, 'height': height, 'frames': total_frames, 'missing': missing, 'codec': 'avc1' }
+    if total_frames == 0:
+        # Clean up empty file and surface a clear error
+        try:
+            if os.path.exists(out_path):
+                os.remove(out_path)
+        except Exception:
+            pass
+        raise RuntimeError("Output video had 0 frames. Check source clips and codecs.")
+    return out_name, meta
+
+
+@app.route('/reverse-translate-video', methods=['POST'])
+def reverse_translate_video():
+    try:
+        data = request.get_json(silent=True) or {}
+        logger.info(f"🎬 reverse_translate_video called with data: {data}")
+        gloss_tokens = data.get('glossTokens')
+        text = data.get('text')
+        logger.info(f"📝 gloss_tokens: {gloss_tokens}, text: {text}")
+
+        # Prefer sentence input via revtrans if provided
+        if isinstance(text, str) and text.strip():
+            try:
+                from revtrans import sentence_to_gloss_tokens as _sentence_to_gloss_tokens
+            except Exception as ie:
+                logger.warning('revtrans.sentence_to_gloss_tokens import failed, falling back: %s', ie)
+                _sentence_to_gloss_tokens = None
+
+            if _sentence_to_gloss_tokens is not None:
+                available = _list_available_video_tokens()
+                gloss_tokens = _sentence_to_gloss_tokens(text.strip(), available_tokens=available)
+            else:
+                gloss_tokens = _text_to_gloss_tokens(text)
+
+        if not isinstance(gloss_tokens, list) or not gloss_tokens:
+            available = _list_available_video_tokens()[:30]
+            logger.warning(f"❌ Invalid payload. Available tokens: {available}")
+            return jsonify({
+                'error': 'Invalid payload. Provide a sentence via "text" or a token list "glossTokens".',
+                'hint': 'Example text: "We go college" or glossTokens: ["we", "go", "college"]',
+                'available_tokens_preview': available
+            }), 400
+
+        # ✅ Compose video from gloss tokens
+        logger.info(f"🎥 Composing video from tokens: {gloss_tokens}")
+        fname, meta = compose_video_from_gloss(gloss_tokens)
+        logger.info(f"✅ Video composed: {fname}, meta: {meta}")
+
+        # ✅ Use existing /outputs/<filename> route (no moving needed)
+        url = f"/outputs/{fname}"
+        logger.info(f"🌐 Video URL: {url}")
+
+        # Warn clearly if codec is not H.264 which some browsers require
+        if meta.get('codec') and meta['codec'].lower() not in ('avc1', 'h264', 'x264', 'mp4v'):
+            meta['playback_warning'] = 'Browser may not play this codec. Prefer H.264 (avc1).'
+
+        return jsonify({
+            'video_url': url,
+            'file': os.path.basename(fname),
+            'meta': meta,
+            'tokens': gloss_tokens
+        }), 200
+
+    except FileNotFoundError as e:
+        return jsonify({'error': str(e)}), 404
+    except RuntimeError as e:
+        return jsonify({'error': str(e)}), 500
+    except Exception as e:
+        tb = traceback.format_exc()
+        logger.error('/reverse-translate-video error: %s\n%s', str(e), tb)
+        return jsonify({'error': str(e), 'trace': tb}), 500
+    
 if __name__ == '__main__':
     print("🚀 Starting Sign Language Translator...")
     print("📁 Loading PyTorch model...")

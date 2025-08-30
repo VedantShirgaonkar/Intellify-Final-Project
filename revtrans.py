@@ -1,190 +1,130 @@
+# Convert text to gloss for video extraction and concatenation
 import os
-
-import json
-
-from dataclasses import dataclass
-
-from typing import List, Dict, Any, Optional
-
 from openai import OpenAI
 
- 
-
 try:
-
     from dotenv import load_dotenv
-
     load_dotenv()
-
 except Exception:
-
     pass
 
- 
-
 assert os.getenv("OPENAI_API_KEY"), "Please set OPENAI_API_KEY (e.g., in your shell or a .env file)."
-
-client = OpenAI() 
-
+client = OpenAI()  
 
 
-
-def gloss_to_english_llm(
-
-    gloss_tokens: List[str],
-
-    context_hint: Optional[str] = None,
-
-    temperature: float = 0.2,
-
-    model: str = "gpt-4o-mini"
-
-) -> str:
-
-    """Convert a list of gloss tokens into a fluent English sentence using an LLM.
-
- 
-
-    Parameters
-
-    ----------
-
-    gloss_tokens : list of str
-
-        Tokens from the CV recognizer (e.g., WSASL/ASL/ISL glosses).
-
-    context_hint : str, optional
-
-        Optional short context (topic/domain) to help resolve ambiguous glosses.
-
-    temperature : float
-
-        Lower values → more deterministic output.
-
-    model : str
-
-        OpenAI model to use.
-
- 
-
-    Returns
-
-    -------
-
-    str
-
-        A single, natural English sentence ending with proper punctuation.
-
+# API Call
+def text_to_gloss(sentence: str):
+    prompt = f"""
+    You are a sign language gloss generator.
+    Convert the following English sentence into simplified ASL gloss (UPPERCASE keywords only, drop articles like 'the', 'is'):
+    
+    Sentence: "{sentence}"
+    Output gloss:
     """
-
-    # 1) Prepare the instruction; we specify constraints to preserve semantics.
-
-    system = (
-
-        "You are a precise sign-language translator. "
-
-        "Convert gloss tokens to a natural English sentence with correct grammar, "
-
-        "articles, tense, and punctuation. Do not add new facts beyond what is implied "
-
-        "by the glosses. Preserve named entities and numbers exactly. Output only the sentence."
-
+    
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=50,
+        temperature=0.2
     )
+    
+    gloss = response.choices[0].message.content.strip()
+    return gloss
 
- 
 
-    # 2) Provide a couple of tiny few-shot examples to stabilize style.
+import os
+import subprocess
 
-    examples = [
+# folder where your videos are stored
+VIDEO_DIR = "videos"
 
-        {
+# mapping from gloss word to actual file name
+GLOSS_TO_VIDEO = {
+    "college": "college.mp4",
+    "good": "good.mp4",
+    "teacher": "teacher.mp4",
+    "work": "work.mp4",
+    "day": "day.mp4",
+    "i": "i.mp4",
+    "time": "time.mp4",
+    "you": "you.mp4",
+    "exam": "exam.mp4",
+    "student": "student.mp4",
+    "we": "we.mp4",
+}
 
-            "gloss": ["YESTERDAY", "STORE", "I", "GO"],
 
-            "english": "I went to the store yesterday."
 
-        },
+def gloss_to_video_list(gloss_text):
+    words = gloss_text.lower().split()
+    video_files = []
 
-        {
+    for w in words:
+        if w in GLOSS_TO_VIDEO:
+            video_files.append(os.path.join(VIDEO_DIR, GLOSS_TO_VIDEO[w]))
+    return video_files
 
-            "gloss": ["TODAY", "SCHOOL", "WE", "MEET", "AFTERNOON"],
 
-            "english": "We will meet at school this afternoon."
+def create_concat_file(video_files, list_file="videos_to_concat.txt"):
+    with open(list_file, "w") as f:
+        for vf in video_files:
+            f.write(f"file '{vf}'\n")
+    return list_file
 
-        }
 
-    ]
-
- 
-
-    # 3) Compose user content with the current tokens and optional context.
-
-    user_lines = []
-
-    if context_hint:
-
-        user_lines.append(f"Context: {context_hint}")
-
-    user_lines.append("Gloss tokens: " + " ".join(gloss_tokens))
-
-    user_lines.append("Return a single complete English sentence.")
-
-    user_prompt = "\n".join(user_lines)
-
- 
-
-    # 4) Build an input string combining instruction + few-shots + current request.
-
-    #    Using the Responses API with `input` keeps things simple.
-
-    few_shot_text = "\n\n".join([
-
-        f"Example gloss: {' '.join(ex['gloss'])}\nExample English: {ex['english']}"
-
-        for ex in examples
-
+def concat_videos(video_files, output_file="output.mp4"):
+    if not video_files:
+        print("⚠️ No videos found for given gloss.")
+        return
+    
+    list_file = create_concat_file(video_files)
+    
+    # run ffmpeg concat
+    subprocess.run([
+        "ffmpeg", "-y", "-f", "concat", "-safe", "0",
+        "-i", list_file, "-c", "copy", output_file
     ])
+    
+    print(f"✅ Concatenated video saved as {output_file}")
 
- 
 
-    full_input = (
 
-        f"System: {system}\n\n"
+def concat_videos_speed(video_files, output_file, speed=1.0):
+    list_file = create_concat_file(video_files)
 
-        f"{few_shot_text}\n\n"
+    # ffmpeg filter for speed
+    speed_filter = f"setpts={1/speed}*PTS"
 
-        f"Now, translate the following into one fluent English sentence.\n"
+    subprocess.run([
+        "ffmpeg", "-y", "-f", "concat", "-safe", "0",
+        "-i", list_file,
+        "-filter:v", speed_filter,
+        "-an",  # remove audio, or handle separately
+        output_file
+    ])
+    print(f"✅ Concatenated video saved as {output_file} (speed ×{speed})")
 
-        f"{user_prompt}"
 
-    )
 
- 
+# Function to convert sentence to gloss tokens
+def sentence_to_gloss_tokens(sentence, available_tokens=None):
+    """Convert sentence to gloss and return tokens list"""
+    gloss = text_to_gloss(sentence)
+    tokens = gloss.lower().split()
+    
+    # Filter by available tokens if provided
+    if available_tokens:
+        tokens = [token for token in tokens if token in available_tokens]
+    
+    return tokens
 
-    # 5) Call the model. Keep temperature low for consistency.
 
-    resp = client.responses.create(
-
-        model=model,
-
-        input=full_input,
-
-        temperature=temperature
-
-    )
-
- 
-
-    # 6) Extract the plain text. The SDK exposes output_text for convenience.
-
-    sentence = resp.output_text.strip()
-
- 
-
-    # 7) Ensure final punctuation.
-
-    if not sentence.endswith(('.', '!', '?')):
-
-        sentence += "."
-
-    return sentence
+# Standalone execution (only when run directly)
+if __name__ == "__main__":
+    print('Enter sentence to convert to gloss:')
+    sentence = input().strip()
+    gloss = text_to_gloss(sentence)
+    print(f"Generated Gloss: {gloss}")
+    video_files = gloss_to_video_list(gloss)
+    concat_videos(video_files, "output.mp4")
