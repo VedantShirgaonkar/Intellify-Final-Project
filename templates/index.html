@@ -1,14 +1,17 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Intellify - AI Sign Language Translator</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='dropdown-fix.css') }}">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
+
 <body>
     <!-- Navigation -->
     <nav class="navbar">
@@ -32,12 +35,12 @@
         <div class="hero-container">
             <div class="hero-content">
                 <h1 class="hero-title">
-                    Experience the future of 
-                    <span class="gradient-text">AI Sign Language</span> 
+                    Experience the future of
+                    <span class="gradient-text">AI Sign Language</span>
                     interpretation
                 </h1>
                 <p class="hero-subtitle">
-                    Bridging communication gaps with cutting-edge AI technology. 
+                    Bridging communication gaps with cutting-edge AI technology.
                     Real-time sign language detection and translation made simple.
                 </p>
                 <div class="hero-actions">
@@ -63,6 +66,7 @@
                     <div class="card-content">
                         <i class="fas fa-language card-icon"></i>
                         <h3>Multi-language Support</h3>
+
                         <p>Translate to multiple spoken languages</p>
                     </div>
                 </div>
@@ -84,7 +88,7 @@
                 <h2 class="section-title">Try Our AI Translator</h2>
                 <p class="section-subtitle">See how effortless sign language translation can be</p>
             </div>
-            
+
             <div class="demo-container">
                 <div class="demo-left">
                     <div class="camera-section">
@@ -138,7 +142,8 @@
                                 </div>
                             </div>
                             <div class="prediction-display">
-                                <div id="detectedText" class="predicted-text">Click "Start Camera" to begin detection</div>
+                                <div id="detectedText" class="predicted-text">Click "Start Camera" to begin detection
+                                </div>
                                 <div class="confidence-section">
                                     <div class="confidence-label">
                                         <span>Confidence</span>
@@ -174,49 +179,10 @@
                             </div>
                         </div>
 
-                        <div class="settings-section">
-                            <div class="settings-card">
-                                <h3>Quick Actions</h3>
-                                <div class="test-phrases">
-                                    <label>Test Phrases:</label>
-                                    <select id="testPhrases" class="test-dropdown">
-                                        <option value="">Select a test phrase...</option>
-                                        <option value="Hello">Hello</option>
-                                        <option value="Thank you">Thank you</option>
-                                        <option value="Good morning">Good morning</option>
-                                        <option value="How are you?">How are you?</option>
-                                        <option value="I love you">I love you</option>
-                                        <option value="Please">Please</option>
-                                        <option value="Yes">Yes</option>
-                                        <option value="No">No</option>
-                                        <option value="Sorry">Sorry</option>
-                                        <option value="Nice to meet you">Nice to meet you</option>
-                                    </select>
-                                </div>
-                                <div class="voice-selection">
-                                    <label>Voice:</label>
-                                    <div class="custom-dropdown">
-                                        <button id="voiceButton" class="dropdown-button">
-                                            <span>Default Voice</span>
-                                            <i class="fas fa-chevron-down"></i>
-                                        </button>
-                                        <div id="voiceMenu" class="dropdown-menu">
-                                            <div class="dropdown-item">Loading voices...</div>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="quick-actions">
-                                    <button class="action-button" onclick="processAndSpeak()">
-                                        <i class="fas fa-volume-up"></i>
-                                        Speak Text
-                                    </button>
-                                    <button class="action-button" onclick="clearDetection()">
-                                        <i class="fas fa-refresh"></i>
-                                        Clear
-                                    </button>
-                                </div>
-                            </div>
+                        <div class="refine-output">
+                            <p id="refinedGloss" class="refined-gloss-text">Your refined output will appear here.</p>
                         </div>
+
                     </div>
                 </div>
             </div>
@@ -331,14 +297,15 @@
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
-    
+
     <!-- Custom JavaScript -->
     <script src="{{ url_for('static', filename='script.js') }}"></script>
-    
+
     <script>
         function scrollToDemo() {
             document.getElementById('demo').scrollIntoView({ behavior: 'smooth' });
         }
     </script>
 </body>
+
 </html>

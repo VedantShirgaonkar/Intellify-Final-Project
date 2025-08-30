@@ -5,3 +5,4 @@ pretrained/
 *.h5
 *.pkl
 *.model
+*.env

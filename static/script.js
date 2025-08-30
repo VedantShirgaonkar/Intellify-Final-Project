@@ -8,7 +8,7 @@ let videoStream = null;
         let faceMesh = null;
         let camera = null;
         let frameDetections = []
-        let confirmedWords = []
+        let confirmedWords = ['hi', 'pizza', 'cafe']
 
         // Wait for the page to load before initializing MediaPipe
         window.addEventListener('load', async function() {
@@ -233,6 +233,15 @@ let videoStream = null;
             }
         }
 
+async function sendConfirmedWords(words = confirmedWords) {
+    const response = await fetch('/process-confirmed-words', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirmedWords: words }),
+    });
+    if (!response.ok) throw new Error(`Server error: ${response.status}`);
+    return await response.json();
+}
         // Camera and recording functionality
         async function toggleCamera() {
             const video = document.getElementById('videoElement');
@@ -298,6 +307,10 @@ let videoStream = null;
                 button.style.background = 'var(--gradient-primary)';
             }
         }
+
+    
+    
+
 
     // Deprecated: recording flow not used in realtime mode but kept for fallback/demo
     function startRecording() {
@@ -748,7 +761,7 @@ let videoStream = null;
             }
         }
 
-        function processAndSpeak() {
+    async function processAndSpeak() {
             // Get the detected text
             const detectedText = document.getElementById('detectedText').textContent;
 
@@ -857,6 +870,22 @@ let videoStream = null;
                 // Speak the text
                 speechSynthesis.speak(utterance);
                 console.log(`Speaking: "${detectedText}" with rate=${utterance.rate}, pitch=${utterance.pitch}`);
+
+                // Also trigger refine flow and update UI
+                try {
+                    showLoadingOverlay();
+                    const result = await sendConfirmedWords();
+                    if (result && result.gloss) {
+                        const outEl = document.getElementById('refinedGloss');
+                        if (outEl) outEl.textContent = result.gloss;
+                        console.log('Refined gloss:', result.gloss);
+                    }
+                } catch (err) {
+                    console.error('Refine failed:', err);
+                    showTemporaryMessage('Could not refine output', 'warning');
+                } finally {
+                    hideLoadingOverlay();
+                }
 
             } else {
                 showTemporaryMessage('❌ Speech synthesis not supported in this browser', 'warning');

@@ -403,6 +403,50 @@ body {
     border: 2px dashed var(--bg-gray-100);
 }
 
+/* Refine Output Section */
+.refine-output {
+    margin-top: 20px;
+    text-align: center;
+    background: #f9f9f9;
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+/* Refine Button */
+.refine-button {
+    background: linear-gradient(90deg, #4caf50, #81c784);
+    color: #fff;
+    font-size: 16px;
+    font-weight: 600;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 25px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.refine-button:hover {
+    background: linear-gradient(90deg, #388e3c, #66bb6a);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    transform: translateY(-2px);
+}
+
+.refine-button:active {
+    transform: translateY(0);
+}
+
+/* Refined Gloss Text */
+.refined-gloss-text {
+    margin-top: 15px;
+    font-size: 14px;
+    color: #555;
+    font-style: italic;
+}
+
 #videoElement {
     width: 100%;
     height: 100%;

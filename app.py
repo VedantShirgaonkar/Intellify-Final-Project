@@ -20,6 +20,8 @@ import torch
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 
+from revtrans import gloss_to_english_llm
+
 # Project model/utils
 from model import DETR
 try:
@@ -231,6 +233,36 @@ def not_found(e):
     return jsonify({'error': 'Not found'}), 404
 
 
+
+@app.route('/process-confirmed-words', methods=['POST'])
+def process_confirmed_words():
+    try:
+        # Get the confirmedWords array from the request
+        data = request.get_json()  # Use get_json() for better error handling
+        if not data:
+            return jsonify({'error': 'Invalid JSON payload'}), 400
+
+        confirmed_words = data.get('confirmedWords', [])
+        
+        if not confirmed_words or not isinstance(confirmed_words, list):
+            return jsonify({'error': 'Invalid or missing "confirmedWords". Expected a non-empty list.'}), 400
+
+        # Log the received confirmed words for debugging
+        logger.info("Received confirmed words: %s", confirmed_words)
+
+        # Call the gloss_to_english_llm function
+        gloss = gloss_to_english_llm(confirmed_words)
+
+        # Return the refined output
+        return jsonify({'gloss': gloss}), 200
+    except KeyError as e:
+        logger.error("KeyError: Missing key in request data: %s", str(e))
+        return jsonify({'error': f'Missing key: {str(e)}'}), 400
+    except Exception as e:
+        logger.error("Error processing confirmed words: %s\n%s", str(e), traceback.format_exc())
+        return jsonify({'error': 'Internal server error'}), 500
+
+
 if __name__ == '__main__':
     print("🚀 Starting Sign Language Translator...")
     print("📁 Loading PyTorch model...")
@@ -243,3 +275,4 @@ if __name__ == '__main__':
 
     print("🌐 Starting Flask server...")
     app.run(debug=True, host='0.0.0.0', port=5000)
+
