@@ -8,7 +8,7 @@ let videoStream = null;
         let faceMesh = null;
         let camera = null;
         let frameDetections = []
-        let confirmedWords = ['hi', 'pizza', 'cafe']
+        let confirmedWords = ['you', 'sick', 'doctor']
 
         // Wait for the page to load before initializing MediaPipe
         window.addEventListener('load', async function() {
@@ -161,7 +161,7 @@ let videoStream = null;
                 async function startRealtimeInfer(videoEl) {
                     // Throttle to balance latency and load (increase FPS and reduce window for faster confirmation)
                     const FPS = 10; // increased to 10 FPS for faster updates
-                    const WINDOW_SIZE = 10; // fewer frames needed for confirmation
+                    const WINDOW_SIZE = 10; // frames needed for confirmation window
                     const PERIOD = 1000 / FPS;
 
                     // Match capture size to model input to reduce bandwidth
@@ -190,7 +190,7 @@ let videoStream = null;
                                 if (label && rawConf >= 0.8) {
                                     frameDetections.push(label);
                                 }
-                                // When we have 30 frames, pick the majority word
+                                // When we have enough frames, pick the majority word
                                 if (frameDetections.length >= WINDOW_SIZE) {
                                     const freq = {};
                                     frameDetections.forEach(w => { freq[w] = (freq[w] || 0) + 1; });
@@ -224,9 +224,16 @@ let videoStream = null;
                     }, PERIOD);
                 }
 
-                // Expose starter on window for reuse in camera toggle
+                // Expose helpers on window for reuse in camera toggle
                 window.__startRealtimeInfer = startRealtimeInfer;
                 window.__realtimeInferStop = () => { if (inferInterval) { clearInterval(inferInterval); inferInterval = null; } };
+                window.__resetOverlays = () => {
+                    try {
+                        canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+                    } catch (_) { /* ignore */ }
+                    lastDetections = null;
+                    lastDetectionsAt = 0;
+                };
 
             } catch (error) {
                 console.error('Error initializing MediaPipe:', error);
@@ -265,6 +272,9 @@ async function sendConfirmedWords(words = confirmedWords) {
                     placeholder.style.display = 'none';
                     button.textContent = 'Stop Camera';
                     button.style.background = 'linear-gradient(135deg, #ff4757, #ff3838)';
+                    // Set analyzing placeholder until a confident detection is made
+                    const detectedEl = document.getElementById('detectedText');
+                    if (detectedEl) detectedEl.textContent = 'Analyzing…';
 
                     // Initialize camera for MediaPipe
                     if (hands && faceMesh) {
@@ -283,6 +293,9 @@ async function sendConfirmedWords(words = confirmedWords) {
                         camera.start();
                         console.log('Camera started for MediaPipe processing');
                     }
+                    // Show overlay frame when camera is on
+                    const overlayDiv = document.querySelector('.camera-overlay');
+                    if (overlayDiv) overlayDiv.style.display = 'block';
                     // Start realtime inference without saving video
                     if (window.__startRealtimeInfer) window.__startRealtimeInfer(video);
 
@@ -305,6 +318,13 @@ async function sendConfirmedWords(words = confirmedWords) {
                 placeholder.style.display = 'block';
                 button.textContent = 'Start Camera';
                 button.style.background = 'var(--gradient-primary)';
+                // Hide overlay frame and clear any drawn boxes when camera is off
+                const overlayDiv = document.querySelector('.camera-overlay');
+                if (overlayDiv) overlayDiv.style.display = 'none';
+                if (window.__resetOverlays) window.__resetOverlays();
+                // Reset detected text to initial prompt
+                const detectedEl2 = document.getElementById('detectedText');
+                if (detectedEl2) detectedEl2.textContent = 'Click "Start Camera" to begin detection';
             }
         }
 
@@ -765,7 +785,25 @@ async function sendConfirmedWords(words = confirmedWords) {
             // Get the detected text
             const detectedText = document.getElementById('detectedText').textContent;
 
-            if (!detectedText || detectedText === 'Click "Start Camera" to begin detection' || detectedText.trim() === '' || detectedText === '--') {
+            // Try to get refined gloss first and use it for speaking
+            let speakText = (detectedText || '').trim();
+            try {
+                showLoadingOverlay();
+                const result = await sendConfirmedWords();
+                if (result && result.gloss && result.gloss.trim()) {
+                    speakText = result.gloss.trim();
+                    const outEl = document.getElementById('refinedGloss');
+                    if (outEl) outEl.textContent = speakText;
+                    console.log('Refined gloss:', speakText);
+                }
+            } catch (err) {
+                console.error('Refine failed:', err);
+                // fall back to detectedText
+            } finally {
+                hideLoadingOverlay();
+            }
+
+            if (!speakText || speakText === 'Click "Start Camera" to begin detection' || speakText === '--') {
                 showTemporaryMessage('No text to speak', 'warning');
                 return;
             }
@@ -775,8 +813,8 @@ async function sendConfirmedWords(words = confirmedWords) {
                 // Cancel any ongoing speech
                 speechSynthesis.cancel();
 
-                // Create a new SpeechSynthesisUtterance
-                const utterance = new SpeechSynthesisUtterance(detectedText);
+                // Create a new SpeechSynthesisUtterance with refined/fallback text
+                const utterance = new SpeechSynthesisUtterance(speakText);
 
                 // Configure voice settings - simple defaults
                 utterance.rate = 0.9;
@@ -869,23 +907,7 @@ async function sendConfirmedWords(words = confirmedWords) {
 
                 // Speak the text
                 speechSynthesis.speak(utterance);
-                console.log(`Speaking: "${detectedText}" with rate=${utterance.rate}, pitch=${utterance.pitch}`);
-
-                // Also trigger refine flow and update UI
-                try {
-                    showLoadingOverlay();
-                    const result = await sendConfirmedWords();
-                    if (result && result.gloss) {
-                        const outEl = document.getElementById('refinedGloss');
-                        if (outEl) outEl.textContent = result.gloss;
-                        console.log('Refined gloss:', result.gloss);
-                    }
-                } catch (err) {
-                    console.error('Refine failed:', err);
-                    showTemporaryMessage('Could not refine output', 'warning');
-                } finally {
-                    hideLoadingOverlay();
-                }
+                console.log(`Speaking: "${speakText}" with rate=${utterance.rate}, pitch=${utterance.pitch}`);
 
             } else {
                 showTemporaryMessage('❌ Speech synthesis not supported in this browser', 'warning');
@@ -1099,3 +1121,5 @@ async function sendConfirmedWords(words = confirmedWords) {
                 showTemporaryMessage('Running in Demo Mode', 'warning');
             }
         }
+
+    // (Reverted) Reverse translate helpers removed
