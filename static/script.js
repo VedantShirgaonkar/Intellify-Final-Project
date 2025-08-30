@@ -1158,6 +1158,11 @@ async function composeReverseVideo() {
         console.log('✅ Response data:', data);
         const url = data.video_url; // Use the direct URL returned by the backend
         console.log('🎥 Video URL:', url);
+        
+        // Hide placeholder and show video
+        const placeholder = document.getElementById('videoPlaceholder');
+        if (placeholder) placeholder.style.display = 'none';
+        
         videoEl.src = url;
         videoEl.style.display = 'block';
         console.log('🔄 Loading video...');
@@ -1165,9 +1170,6 @@ async function composeReverseVideo() {
         videoEl.play().catch((playErr) => {
             console.error('▶️ Play error:', playErr);
         });
-        if (metaEl && data.meta) {
-            metaEl.textContent = `FPS: ${Math.round(data.meta.fps || 0)} | ${data.meta.width}x${data.meta.height} | Frames: ${data.meta.frames}${data.meta.missing?.length ? ' | Missing: ' + data.meta.missing.join(', ') : ''}`;
-        }
         showTemporaryMessage('Reverse video ready', 'success');
     } catch (e) {
         console.error('composeReverseVideo error:', e);

@@ -10,6 +10,29 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
         rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        .reverse-translation-section .control-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.2);
+        }
+        .reverse-translation-section .control-button.accent:hover {
+            background: #2563eb !important;
+        }
+        .reverse-translation-section .control-button.secondary:hover {
+            background: rgba(255,255,255,0.3) !important;
+        }
+        .reverse-translation-section .text-input:focus {
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.3);
+        }
+        .video-container {
+            position: relative;
+            transition: all 0.3s ease;
+        }
+        .video-placeholder {
+            transition: opacity 0.3s ease;
+        }
+    </style>
 </head>
 
 <body>
@@ -75,38 +98,6 @@
                         <i class="fas fa-brain card-icon"></i>
                         <h3>Smart AI</h3>
                         <p>Machine learning powered accuracy</p>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- Reverse Translation (Gloss ➜ Video) Section -->
-    <section class="demo-section" style="padding-top: 0;">
-        <div class="container">
-            <div class="section-header">
-                <h2 class="section-title">Reverse Translation</h2>
-                <p class="section-subtitle">Enter English sentences to generate sign language videos</p>
-            </div>
-            <div class="demo-container">
-                <div class="demo-right" style="width:100%;">
-                    <div class="translation-card">
-                        <div class="card-header">
-                            <h3>English Sentence</h3>
-                        </div>
-                        <div class="translation-display" style="display:flex; flex-direction:column; gap:12px;">
-                            <input id="glossTokensInput" type="text" class="text-input" placeholder="Enter English sentence, e.g.: We are going to college for exam" />
-                            <div style="display:flex; gap:10px;">
-                                <button class="control-button accent" onclick="composeReverseVideo()">
-                                    <i class="fas fa-video"></i> Build Video
-                                </button>
-                                <button class="control-button secondary" onclick="fillSampleGloss()">
-                                    <i class="fas fa-magic"></i> Sample
-                                </button>
-                            </div>
-                            <video id="reverseVideo" controls style="width:100%; border-radius:12px; background:#000; display:none;"></video>
-                            <div id="reverseMeta" class="refined-gloss-text"></div>
-                        </div>
                     </div>
                 </div>
             </div>
@@ -216,6 +207,65 @@
                         </div>
 
 
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Reverse Translation Section -->
+    <section class="demo-section reverse-translation-section" style="background: linear-gradient(135deg, #3b82f6 0%, #60a5fa 100%); color: white; padding: 80px 0;">
+        <div class="container">
+            <div class="section-header">
+                <h2 class="section-title" style="color: white;">Text to Sign Language</h2>
+                <p class="section-subtitle" style="color: rgba(255,255,255,0.9);">Convert English sentences into sign language videos</p>
+            </div>
+            <div class="demo-container" style="display: flex; justify-content: center;">
+                <div class="demo-right" style="width:100%; max-width: 700px;">
+                    <div class="translation-card" style="background: rgba(255,255,255,0.15); backdrop-filter: blur(15px); border: 1px solid rgba(255,255,255,0.25); border-radius: 16px;">
+                        <div class="card-header">
+                            <h3 style="color: white;">
+                                <i class="fas fa-language" style="margin-right: 8px;"></i>
+                                English to Sign Language
+                            </h3>
+                        </div>
+                        <div class="translation-display" style="display:flex; flex-direction:column; gap:20px; padding: 24px;">
+                            <div class="input-group">
+                                <label for="glossTokensInput" style="color: white; font-weight: 500; margin-bottom: 8px; display: block;">
+                                    Enter your sentence:
+                                </label>
+                                <textarea 
+                                    id="glossTokensInput" 
+                                    class="text-input" 
+                                    placeholder="Type your English sentence here, e.g.: We are going to college for exam"
+                                    style="background: rgba(29, 78, 216, 0.15); border: 1px solid rgba(29, 78, 216, 0.3); padding: 12px; border-radius: 8px; font-size: 15px; width: 100%; min-height: 48px; max-height: 80px; resize: vertical; font-family: inherit; color: #1e293b;"
+                                    rows="2"
+                                ></textarea>
+                            </div>
+                            <div class="button-group" style="display:flex; gap:12px; justify-content: center;">
+                                <button class="control-button accent" onclick="composeReverseVideo()" style="background: #3b82f6; border: none; padding: 12px 24px; border-radius: 8px; color: white; font-weight: 600; cursor: pointer; transition: all 0.3s ease;">
+                                    <i class="fas fa-video"></i> Generate Video
+                                </button>
+                                <button class="control-button secondary" onclick="fillSampleGloss()" style="background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); padding: 12px 24px; border-radius: 8px; color: white; font-weight: 600; cursor: pointer; transition: all 0.3s ease;">
+                                    <i class="fas fa-magic"></i> Try Sample
+                                </button>
+                            </div>
+                            <div class="video-container" style="border-radius: 12px; overflow: hidden; background: rgba(255,255,255,0.1); display: flex; justify-content: center; align-items: center; min-height: 350px; border: 2px dashed rgba(255,255,255,0.3);">
+                                <div class="video-placeholder" style="text-align: center; color: rgba(255,255,255,0.7); display: block;" id="videoPlaceholder">
+                                    <i class="fas fa-video" style="font-size: 48px; margin-bottom: 16px; opacity: 0.6;"></i>
+                                    <p style="margin: 0; font-size: 18px; font-weight: 500;">Your sign language video will appear here</p>
+                                    <p style="margin: 8px 0 0 0; font-size: 14px; opacity: 0.8;">Enter a sentence and click "Generate Video" to get started</p>
+                                </div>
+                                <video 
+                                    id="reverseVideo" 
+                                    controls 
+                                    style="width:100%; max-width: 600px; border-radius: 8px; background:#000; display:none;"
+                                >
+                                    <source src="" type="video/mp4">
+                                    Your browser does not support HTML5 video.
+                                </video>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
