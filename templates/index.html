@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Intellify - AI Sign Language Translator</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='dropdown-fix.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <i class="fas fa-hands nav-icon"></i>
+                <span class="brand-text">Intellify</span>
+            </div>
+            <div class="nav-links">
+                <a href="#demo" class="nav-link">Demo</a>
+                <a href="/learn" class="nav-link">Learn</a>
+                <a href="#features" class="nav-link">Features</a>
+                <a href="#about" class="nav-link">About</a>
+                <button class="cta-button">Try It Free</button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="hero">
+        <div class="hero-container">
+            <div class="hero-content">
+                <h1 class="hero-title">
+                    Experience the future of 
+                    <span class="gradient-text">AI Sign Language</span> 
+                    interpretation
+                </h1>
+                <p class="hero-subtitle">
+                    Bridging communication gaps with cutting-edge AI technology. 
+                    Real-time sign language detection and translation made simple.
+                </p>
+                <div class="hero-actions">
+                    <button class="primary-button" onclick="scrollToDemo()">
+                        <i class="fas fa-play"></i>
+                        Start Demo
+                    </button>
+                    <button class="secondary-button" onclick="window.location.href='/learn'">
+                        <i class="fas fa-graduation-cap"></i>
+                        Learn Sign Language
+                    </button>
+                </div>
+            </div>
+            <div class="hero-visual">
+                <div class="floating-card">
+                    <div class="card-content">
+                        <i class="fas fa-video card-icon"></i>
+                        <h3>Real-time Detection</h3>
+                        <p>Advanced AI models detect hand gestures instantly</p>
+                    </div>
+                </div>
+                <div class="floating-card delay-1">
+                    <div class="card-content">
+                        <i class="fas fa-language card-icon"></i>
+                        <h3>Multi-language Support</h3>
+                        <p>Translate to multiple spoken languages</p>
+                    </div>
+                </div>
+                <div class="floating-card delay-2">
+                    <div class="card-content">
+                        <i class="fas fa-brain card-icon"></i>
+                        <h3>Smart AI</h3>
+                        <p>Machine learning powered accuracy</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Demo Section -->
+    <section id="demo" class="demo-section">
+        <div class="container">
+            <div class="section-header">
+                <h2 class="section-title">Try Our AI Translator</h2>
+                <p class="section-subtitle">See how effortless sign language translation can be</p>
+            </div>
+            
+            <div class="demo-container">
+                <div class="demo-left">
+                    <div class="camera-section">
+                        <div class="camera-header">
+                            <h3>Live Camera Feed</h3>
+                            <div class="status-indicator">
+                                <div class="status-dot"></div>
+                                <span>Ready</span>
+                            </div>
+                        </div>
+                        <div id="camera-feed" class="camera-feed">
+                            <video id="videoElement" autoplay muted playsinline></video>
+                            <canvas id="canvasOverlay"></canvas>
+                            <div class="camera-overlay">
+                                <div class="detection-frame"></div>
+                            </div>
+                            <div class="camera-placeholder" id="cameraPlaceholder">
+                                <i class="fas fa-video"></i>
+                                <p>Click to start camera</p>
+                            </div>
+                        </div>
+                        <div class="camera-controls">
+                            <button id="cameraButton" class="control-button primary" onclick="toggleCamera()">
+                                <i class="fas fa-play"></i>
+                                Start Camera
+                            </button>
+                            <button id="stopCamera" class="control-button secondary">
+                                <i class="fas fa-stop"></i>
+                                Stop
+                            </button>
+                            <button id="processButton" class="control-button accent" onclick="processAndSpeak()">
+                                <i class="fas fa-cogs"></i>
+                                Process
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="demo-right">
+                    <div class="results-section">
+                        <div class="prediction-card">
+                            <div class="card-header">
+                                <h3>Detected Sign</h3>
+                                <div class="language-selector">
+                                    <select id="language-select" class="language-dropdown">
+                                        <option value="en">English</option>
+                                        <option value="hi">Hindi</option>
+                                        <option value="es">Spanish</option>
+                                        <option value="fr">French</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="prediction-display">
+                                <div id="detectedText" class="predicted-text">Click "Start Camera" to begin detection</div>
+                                <div class="confidence-section">
+                                    <div class="confidence-label">
+                                        <span>Confidence</span>
+                                        <span id="confidence-value">--</span>
+                                    </div>
+                                    <div class="confidence-bar">
+                                        <div id="confidence-fill" class="confidence-fill" style="width: 0%"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="translation-card">
+                            <div class="card-header">
+                                <h3>Audio Output</h3>
+                                <button class="audio-button" id="play-audio">
+                                    <i class="fas fa-volume-up"></i>
+                                </button>
+                            </div>
+                            <div class="translation-display">
+                                <div class="audio-visualizer">
+                                    <div class="waveform-bar" style="height: 20px;"></div>
+                                    <div class="waveform-bar" style="height: 35px;"></div>
+                                    <div class="waveform-bar" style="height: 50px;"></div>
+                                    <div class="waveform-bar" style="height: 30px;"></div>
+                                    <div class="waveform-bar" style="height: 45px;"></div>
+                                    <div class="waveform-bar" style="height: 25px;"></div>
+                                    <div class="waveform-bar" style="height: 40px;"></div>
+                                    <div class="waveform-bar" style="height: 55px;"></div>
+                                    <div class="waveform-bar" style="height: 35px;"></div>
+                                    <div class="waveform-bar" style="height: 28px;"></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="settings-section">
+                            <div class="settings-card">
+                                <h3>Quick Actions</h3>
+                                <div class="test-phrases">
+                                    <label>Test Phrases:</label>
+                                    <select id="testPhrases" class="test-dropdown">
+                                        <option value="">Select a test phrase...</option>
+                                        <option value="Hello">Hello</option>
+                                        <option value="Thank you">Thank you</option>
+                                        <option value="Good morning">Good morning</option>
+                                        <option value="How are you?">How are you?</option>
+                                        <option value="I love you">I love you</option>
+                                        <option value="Please">Please</option>
+                                        <option value="Yes">Yes</option>
+                                        <option value="No">No</option>
+                                        <option value="Sorry">Sorry</option>
+                                        <option value="Nice to meet you">Nice to meet you</option>
+                                    </select>
+                                </div>
+                                <div class="voice-selection">
+                                    <label>Voice:</label>
+                                    <div class="custom-dropdown">
+                                        <button id="voiceButton" class="dropdown-button">
+                                            <span>Default Voice</span>
+                                            <i class="fas fa-chevron-down"></i>
+                                        </button>
+                                        <div id="voiceMenu" class="dropdown-menu">
+                                            <div class="dropdown-item">Loading voices...</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="quick-actions">
+                                    <button class="action-button" onclick="processAndSpeak()">
+                                        <i class="fas fa-volume-up"></i>
+                                        Speak Text
+                                    </button>
+                                    <button class="action-button" onclick="clearDetection()">
+                                        <i class="fas fa-refresh"></i>
+                                        Clear
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section id="features" class="features-section">
+        <div class="container">
+            <div class="section-header">
+                <h2 class="section-title">Powerful Features</h2>
+                <p class="section-subtitle">Everything you need for seamless sign language communication</p>
+            </div>
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <i class="fas fa-bolt"></i>
+                    </div>
+                    <h3>Real-time Processing</h3>
+                    <p>Instant sign language detection with millisecond response times</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <i class="fas fa-brain"></i>
+                    </div>
+                    <h3>Advanced AI</h3>
+                    <p>State-of-the-art machine learning models for accurate recognition</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <i class="fas fa-graduation-cap"></i>
+                    </div>
+                    <h3>Interactive Learning</h3>
+                    <p>Learn sign language with video tutorials and practice exercises</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <i class="fas fa-globe"></i>
+                    </div>
+                    <h3>Multi-language</h3>
+                    <p>Support for multiple spoken languages and sign language variants</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <i class="fas fa-mobile-alt"></i>
+                    </div>
+                    <h3>Cross-platform</h3>
+                    <p>Works seamlessly across all devices and operating systems</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-brand">
+                    <div class="nav-brand">
+                        <i class="fas fa-hands nav-icon"></i>
+                        <span class="brand-text">Intellify</span>
+                    </div>
+                    <p>Empowering communication through AI technology</p>
+                </div>
+                <div class="footer-links">
+                    <div class="link-group">
+                        <h4>Product</h4>
+                        <a href="#">Features</a>
+                        <a href="#">Demo</a>
+                        <a href="#">API</a>
+                    </div>
+                    <div class="link-group">
+                        <h4>Company</h4>
+                        <a href="#">About</a>
+                        <a href="#">Team</a>
+                        <a href="#">Contact</a>
+                    </div>
+                    <div class="link-group">
+                        <h4>Support</h4>
+                        <a href="#">Help Center</a>
+                        <a href="#">Documentation</a>
+                        <a href="#">Community</a>
+                    </div>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>&copy; 2025 Intellify. All rights reserved.</p>
+                <div class="social-links">
+                    <a href="#"><i class="fab fa-twitter"></i></a>
+                    <a href="#"><i class="fab fa-linkedin"></i></a>
+                    <a href="#"><i class="fab fa-github"></i></a>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" class="loading-overlay">
+        <div class="loading-content">
+            <div class="loading-spinner"></div>
+            <div class="loading-text">
+                <span class="loading-dots">Processing</span>
+            </div>
+            <div class="progress-bar">
+                <div class="progress-fill"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MediaPipe Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
+    
+    <!-- Custom JavaScript -->
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+    
+    <script>
+        function scrollToDemo() {
+            document.getElementById('demo').scrollIntoView({ behavior: 'smooth' });
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Learn Sign Language - Intellify</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <i class="fas fa-hands nav-icon"></i>
+                <span class="brand-text">Intellify</span>
+            </div>
+            <div class="nav-links">
+                <a href="/" class="nav-link">Home</a>
+                <a href="/learn" class="nav-link active">Learn</a>
+                <a href="/#features" class="nav-link">Features</a>
+                <a href="/#about" class="nav-link">About</a>
+                <button class="cta-button" onclick="window.location.href='/'">Try Translator</button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="hero learn-hero">
+        <div class="hero-container">
+            <div class="hero-content">
+                <h1 class="hero-title">
+                    Master 
+                    <span class="gradient-text">Sign Language</span> 
+                    with Interactive Lessons
+                </h1>
+                <p class="hero-subtitle">
+                    Learn at your own pace with our comprehensive video tutorials, 
+                    practice exercises, and interactive learning modules.
+                </p>
+                <div class="hero-actions">
+                    <button class="primary-button" onclick="scrollToLessons()">
+                        <i class="fas fa-play"></i>
+                        Start Learning
+                    </button>
+                    <button class="secondary-button" onclick="window.location.href='/'">
+                        <i class="fas fa-robot"></i>
+                        Try AI Translator
+                    </button>
+                </div>
+            </div>
+            <div class="hero-visual">
+                <div class="floating-card">
+                    <div class="card-content">
+                        <i class="fas fa-hand-paper card-icon"></i>
+                        <h3>Alphabet & Letters</h3>
+                        <p>Master the fundamentals with letter-by-letter guidance</p>
+                    </div>
+                </div>
+                <div class="floating-card delay-1">
+                    <div class="card-content">
+                        <i class="fas fa-comments card-icon"></i>
+                        <h3>Common Phrases</h3>
+                        <p>Learn everyday conversations and expressions</p>
+                    </div>
+                </div>
+                <div class="floating-card delay-2">
+                    <div class="card-content">
+                        <i class="fas fa-chart-line card-icon"></i>
+                        <h3>Progress Tracking</h3>
+                        <p>Monitor your learning journey and achievements</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Lessons Section -->
+    <section id="lessons" class="lessons-section">
+        <div class="container">
+            <div class="section-header">
+                <h2 class="section-title">Learning Modules</h2>
+                <p class="section-subtitle">Choose a topic to begin your sign language journey</p>
+            </div>
+            
+            <div class="lessons-grid">
+                <div class="lesson-card">
+                    <div class="lesson-icon">
+                        <i class="fas fa-font"></i>
+                    </div>
+                    <div class="lesson-content">
+                        <h3>Basic Alphabet</h3>
+                        <p>Learn the fundamental signs for each letter of the alphabet with step-by-step video guidance.</p>
+                        <div class="lesson-meta">
+                            <span class="lesson-duration"><i class="fas fa-clock"></i> 15 min</span>
+                            <span class="lesson-level"><i class="fas fa-star"></i> Beginner</span>
+                        </div>
+                        <button class="lesson-button" onclick="openVideoModal('alphabet', 'Basic Alphabet', 'https://www.youtube.com/embed/tkMg8g8vVUo')">
+                            <i class="fas fa-play"></i>
+                            Start Lesson
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="lesson-card">
+                    <div class="lesson-icon">
+                        <i class="fas fa-comments"></i>
+                    </div>
+                    <div class="lesson-content">
+                        <h3>Common Words</h3>
+                        <p>Practice everyday words and phrases that you'll use in daily sign language conversations.</p>
+                        <div class="lesson-meta">
+                            <span class="lesson-duration"><i class="fas fa-clock"></i> 20 min</span>
+                            <span class="lesson-level"><i class="fas fa-star"></i> Beginner</span>
+                        </div>
+                        <button class="lesson-button" onclick="openVideoModal('words', 'Common Words', 'https://www.youtube.com/embed/v1desDduz5M')">
+                            <i class="fas fa-play"></i>
+                            Start Lesson
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="lesson-card">
+                    <div class="lesson-icon">
+                        <i class="fas fa-calculator"></i>
+                    </div>
+                    <div class="lesson-content">
+                        <h3>Numbers</h3>
+                        <p>Master counting and number signs from 1 to 100 with clear demonstrations and practice.</p>
+                        <div class="lesson-meta">
+                            <span class="lesson-duration"><i class="fas fa-clock"></i> 12 min</span>
+                            <span class="lesson-level"><i class="fas fa-star"></i> Beginner</span>
+                        </div>
+                        <button class="lesson-button" onclick="openVideoModal('numbers', 'Numbers', 'https://www.youtube.com/embed/eVUIqrNgU8s')">
+                            <i class="fas fa-play"></i>
+                            Start Lesson
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="lesson-card">
+                    <div class="lesson-icon">
+                        <i class="fas fa-hand-wave"></i>
+                    </div>
+                    <div class="lesson-content">
+                        <h3>Greetings</h3>
+                        <p>Learn how to greet people, introduce yourself, and make polite conversation in sign language.</p>
+                        <div class="lesson-meta">
+                            <span class="lesson-duration"><i class="fas fa-clock"></i> 18 min</span>
+                            <span class="lesson-level"><i class="fas fa-star"></i> Beginner</span>
+                        </div>
+                        <button class="lesson-button" onclick="openVideoModal('greetings', 'Greetings', 'https://www.youtube.com/embed/LESaD65xqf8')">
+                            <i class="fas fa-play"></i>
+                            Start Lesson
+                        </button>
+                    </div>
+                </div>
+
+                <div class="lesson-card">
+                    <div class="lesson-icon">
+                        <i class="fas fa-utensils"></i>
+                    </div>
+                    <div class="lesson-content">
+                        <h3>Food & Dining</h3>
+                        <p>Express your food preferences and navigate dining situations with confidence.</p>
+                        <div class="lesson-meta">
+                            <span class="lesson-duration"><i class="fas fa-clock"></i> 25 min</span>
+                            <span class="lesson-level"><i class="fas fa-star"></i> Intermediate</span>
+                        </div>
+                        <button class="lesson-button" onclick="openVideoModal('food', 'Food & Dining', 'https://www.youtube.com/embed/dQw4w9WgXcQ')">
+                            <i class="fas fa-play"></i>
+                            Start Lesson
+                        </button>
+                    </div>
+                </div>
+
+                <div class="lesson-card">
+                    <div class="lesson-icon">
+                        <i class="fas fa-heart"></i>
+                    </div>
+                    <div class="lesson-content">
+                        <h3>Emotions</h3>
+                        <p>Learn to express feelings, emotions, and describe your mental state effectively.</p>
+                        <div class="lesson-meta">
+                            <span class="lesson-duration"><i class="fas fa-clock"></i> 22 min</span>
+                            <span class="lesson-level"><i class="fas fa-star"></i> Intermediate</span>
+                        </div>
+                        <button class="lesson-button" onclick="openVideoModal('emotions', 'Emotions', 'https://www.youtube.com/embed/dQw4w9WgXcQ')">
+                            <i class="fas fa-play"></i>
+                            Start Lesson
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Progress Section -->
+    <section class="progress-section">
+        <div class="container">
+            <div class="section-header">
+                <h2 class="section-title">Your Learning Progress</h2>
+                <p class="section-subtitle">Track your achievements and continue your journey</p>
+            </div>
+            
+            <div class="progress-container">
+                <div class="progress-card">
+                    <div class="progress-icon">
+                        <i class="fas fa-trophy"></i>
+                    </div>
+                    <div class="progress-content">
+                        <h3>Lessons Completed</h3>
+                        <div class="progress-stat">0 / 6</div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: 0%"></div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="progress-card">
+                    <div class="progress-icon">
+                        <i class="fas fa-clock"></i>
+                    </div>
+                    <div class="progress-content">
+                        <h3>Time Spent Learning</h3>
+                        <div class="progress-stat">0 hours</div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: 0%"></div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="progress-card">
+                    <div class="progress-icon">
+                        <i class="fas fa-star"></i>
+                    </div>
+                    <div class="progress-content">
+                        <h3>Skill Level</h3>
+                        <div class="progress-stat">Beginner</div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: 15%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-brand">
+                    <div class="nav-brand">
+                        <i class="fas fa-hands nav-icon"></i>
+                        <span class="brand-text">Intellify</span>
+                    </div>
+                    <p>Empowering communication through AI technology and interactive learning</p>
+                </div>
+                <div class="footer-links">
+                    <div class="link-group">
+                        <h4>Learning</h4>
+                        <a href="/learn">Sign Language Lessons</a>
+                        <a href="#">Practice Exercises</a>
+                        <a href="#">Progress Tracking</a>
+                    </div>
+                    <div class="link-group">
+                        <h4>AI Translator</h4>
+                        <a href="/">Real-time Translation</a>
+                        <a href="/#demo">Live Demo</a>
+                        <a href="#">API Access</a>
+                    </div>
+                    <div class="link-group">
+                        <h4>Support</h4>
+                        <a href="#">Help Center</a>
+                        <a href="#">Documentation</a>
+                        <a href="#">Community</a>
+                    </div>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>&copy; 2025 Intellify. All rights reserved.</p>
+                <div class="social-links">
+                    <a href="#"><i class="fab fa-twitter"></i></a>
+                    <a href="#"><i class="fab fa-linkedin"></i></a>
+                    <a href="#"><i class="fab fa-github"></i></a>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Video Modal -->
+    <div id="videoModal" class="video-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modalTitle">Lesson Title</h3>
+                <button class="modal-close" onclick="closeVideoModal()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <iframe id="modalVideo" src="" frameborder="0" allowfullscreen></iframe>
+            </div>
+            <div class="modal-footer">
+                <button class="secondary-button" onclick="closeVideoModal()">Close</button>
+                <button class="primary-button" onclick="markLessonComplete()">Mark Complete</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Custom JavaScript -->
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+    
+    <script>
+        function scrollToLessons() {
+            document.getElementById('lessons').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function openVideoModal(lessonId, title, videoUrl) {
+            const modal = document.getElementById('videoModal');
+            const modalTitle = document.getElementById('modalTitle');
+            const modalVideo = document.getElementById('modalVideo');
+            
+            modalTitle.textContent = title;
+            modalVideo.src = videoUrl;
+            modal.style.display = 'flex';
+            
+            // Track lesson start
+            console.log(`Started lesson: ${lessonId}`);
+        }
+
+        function closeVideoModal() {
+            const modal = document.getElementById('videoModal');
+            const modalVideo = document.getElementById('modalVideo');
+            
+            modal.style.display = 'none';
+            modalVideo.src = '';
+        }
+
+        function markLessonComplete() {
+            // Here you could integrate with a backend to track progress
+            alert('Lesson marked as complete! Great job!');
+            closeVideoModal();
+        }
+
+        // Close modal when clicking outside
+        window.onclick = function(event) {
+            const modal = document.getElementById('videoModal');
+            if (event.target == modal) {
+                closeVideoModal();
+            }
+        }
+    </script>
+</body>
+</html>

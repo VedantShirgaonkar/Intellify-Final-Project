@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>About Us - Sign Language Translator</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</head>
+
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>About Sign Language Translator</h1>
+            <p>Learn more about our mission and technology</p>
+        </header>
+
+        <main class="main-content">
+            <div class="panel single-panel">
+                <div class="about-content">
+                    <h2>Our Mission</h2>
+                    <p>We are dedicated to breaking down communication barriers by providing real-time sign language translation technology. Our goal is to make communication more accessible for the deaf and hard-of-hearing community.</p>
+                    
+                    <h2>How It Works</h2>
+                    <p>Our system uses advanced computer vision and machine learning algorithms to recognize hand gestures and facial expressions in real-time, translating them into spoken or written language.</p>
+                    
+                    <h2>Features</h2>
+                    <ul>
+                        <li>Real-time gesture recognition</li>
+                        <li>Multiple language support</li>
+                        <li>Voice output with customizable voices</li>
+                        <li>High accuracy translation</li>
+                        <li>User-friendly interface</li>
+                    </ul>
+                    
+                    <h2>Technology Stack</h2>
+                    <p>Built with Flask, MediaPipe, TensorFlow, and modern web technologies to provide a seamless user experience.</p>
+                </div>
+            </div>
+        </main>
+
+        <footer class="footer">
+            <div class="navigation-buttons" style="text-align: center;">
+                <button class="nav-button" onclick="window.location.href='/'">Back to Home</button>
+                <button class="nav-button" onclick="window.location.href='/learn'">Learn Here</button>
+            </div>
+        </footer>
+    </div>
+</body>
+
+</html>
