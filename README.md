@@ -64,4 +64,4 @@ Our project aims to solve this by building a **real-time, AI-powered sign langua
 | **Frontend**   | HTML, CSS, JavaScript |
 | **Database**   | SQLite |
 | **AI/ML Models** | - MediaPipe / OpenCV for hand & body tracking <br> - Transformer-based models for sequence recognition <br> - Custom-trained ViT / CNN models |
-| **Deployment** | / Docker / Cloud (Azure) |
+| **Deployment** | Docker / Cloud (Azure) |
