@@ -203,7 +203,7 @@
                         </div>
 
                         <div class="refine-output">
-                            <p id="refinedGloss" class="refined-gloss-text">Your refined output will appear here.</p>
+                            <div id="sentenceOutput" class="sentence-output">LLM-generated sentence will appear here.</div>
                         </div>
 
 
@@ -222,23 +222,23 @@
             </div>
             <div class="demo-container" style="display: flex; justify-content: center;">
                 <div class="demo-right" style="width:100%; max-width: 700px;">
-                    <div class="translation-card" style="background: rgba(255,255,255,0.15); backdrop-filter: blur(15px); border: 1px solid rgba(255,255,255,0.25); border-radius: 16px;">
+                    <div class="translation-card" style="background: white; backdrop-filter: blur(15px); border: 1px solid rgba(255,255,255,0.25); border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.1);">
                         <div class="card-header">
-                            <h3 style="color: white;">
+                            <h3 style="color: #3b82f6;">
                                 <i class="fas fa-language" style="margin-right: 8px;"></i>
                                 English to Sign Language
                             </h3>
                         </div>
                         <div class="translation-display" style="display:flex; flex-direction:column; gap:20px; padding: 24px;">
                             <div class="input-group">
-                                <label for="glossTokensInput" style="color: white; font-weight: 500; margin-bottom: 8px; display: block;">
+                                <label for="glossTokensInput" style="color: #374151; font-weight: 500; margin-bottom: 8px; display: block;">
                                     Enter your sentence:
                                 </label>
                                 <textarea 
                                     id="glossTokensInput" 
                                     class="text-input" 
                                     placeholder="Type your English sentence here, e.g.: We are going to college for exam"
-                                    style="background: rgba(29, 78, 216, 0.15); border: 1px solid rgba(29, 78, 216, 0.3); padding: 12px; border-radius: 8px; font-size: 15px; width: 100%; min-height: 48px; max-height: 80px; resize: vertical; font-family: inherit; color: #1e293b;"
+                                    style="background: #f9fafb; border: 1px solid #d1d5db; padding: 12px; border-radius: 8px; font-size: 15px; width: 100%; min-height: 48px; max-height: 80px; resize: vertical; font-family: inherit; color: #111827;"
                                     rows="2"
                                 ></textarea>
                             </div>
@@ -246,15 +246,15 @@
                                 <button class="control-button accent" onclick="composeReverseVideo()" style="background: #3b82f6; border: none; padding: 12px 24px; border-radius: 8px; color: white; font-weight: 600; cursor: pointer; transition: all 0.3s ease;">
                                     <i class="fas fa-video"></i> Generate Video
                                 </button>
-                                <button class="control-button secondary" onclick="fillSampleGloss()" style="background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); padding: 12px 24px; border-radius: 8px; color: white; font-weight: 600; cursor: pointer; transition: all 0.3s ease;">
+                                <button class="control-button secondary" onclick="fillSampleGloss()" style="background: #f3f4f6; border: 1px solid #d1d5db; padding: 12px 24px; border-radius: 8px; color: #374151; font-weight: 600; cursor: pointer; transition: all 0.3s ease;">
                                     <i class="fas fa-magic"></i> Try Sample
                                 </button>
                             </div>
-                            <div class="video-container" style="border-radius: 12px; overflow: hidden; background: rgba(255,255,255,0.1); display: flex; justify-content: center; align-items: center; min-height: 350px; border: 2px dashed rgba(255,255,255,0.3);">
-                                <div class="video-placeholder" style="text-align: center; color: rgba(255,255,255,0.7); display: block;" id="videoPlaceholder">
-                                    <i class="fas fa-video" style="font-size: 48px; margin-bottom: 16px; opacity: 0.6;"></i>
-                                    <p style="margin: 0; font-size: 18px; font-weight: 500;">Your sign language video will appear here</p>
-                                    <p style="margin: 8px 0 0 0; font-size: 14px; opacity: 0.8;">Enter a sentence and click "Generate Video" to get started</p>
+                            <div class="video-container" style="border-radius: 12px; overflow: hidden; background: #f3f4f6; display: flex; justify-content: center; align-items: center; min-height: 350px; border: 2px dashed #d1d5db;">
+                                <div class="video-placeholder" style="text-align: center; color: #6b7280; display: block;" id="videoPlaceholder">
+                                    <i class="fas fa-video" style="font-size: 48px; margin-bottom: 16px; opacity: 0.6; color: #9ca3af;"></i>
+                                    <p style="margin: 0; font-size: 18px; font-weight: 500; color: #374151;">Your sign language video will appear here</p>
+                                    <p style="margin: 8px 0 0 0; font-size: 14px; opacity: 0.8; color: #6b7280;">Enter a sentence and click "Generate Video" to get started</p>
                                 </div>
                                 <video 
                                     id="reverseVideo" 

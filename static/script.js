@@ -8,7 +8,7 @@ let isRecording = false;
 // let faceMesh = null;
 // let camera = null;
 let frameDetections = []
-let confirmedWords = ['you', 'sick', 'doctor']
+let confirmedWords = ['I', 'be', 'sad','toys','broke']
 
 
 let inferInterval = null;
@@ -137,13 +137,21 @@ window.addEventListener('load', async function () {
 
 
 async function sendConfirmedWords(words = confirmedWords) {
+    console.log('[LLM Flow] ▶️ Sending confirmedWords:', words);
     const response = await fetch('/process-confirmed-words', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ confirmedWords: words }),
     });
-    if (!response.ok) throw new Error(`Server error: ${response.status}`);
-    return await response.json();
+    console.log('[LLM Flow] 📡 HTTP status:', response.status);
+    if (!response.ok) {
+        const err = await response.text().catch(() => '(no body)');
+        console.error('[LLM Flow] ❌ Error body:', err);
+        throw new Error(`Server returned ${response.status}`);
+    }
+    const payload = await response.json();
+    console.log('[LLM Flow] ✅ Payload:', payload);
+    return payload;
 }
 // Camera and recording functionality
 async function toggleCamera() {
@@ -643,25 +651,29 @@ async function processAndSpeak() {
     const detectedText = document.getElementById('detectedText').textContent;
 
     // Try to get refined gloss first and use it for speaking
-    let speakText = (detectedText || '').trim();
+     let speakText = '';
+
     try {
         showLoadingOverlay();
         const result = await sendConfirmedWords();
-        if (result && result.gloss && result.gloss.trim()) {
-            speakText = result.gloss.trim();
-            const outEl = document.getElementById('refinedGloss');
+        // first try "sentence", fallback to old "gloss"
+        const refined = result.sentence || result.gloss;
+        if (refined) {
+            speakText = refined.trim();
+            const outEl = document.getElementById('sentenceOutput');
             if (outEl) outEl.textContent = speakText;
-            console.log('Refined gloss:', speakText);
+            console.log('LLM sentence:', speakText);
         }
     } catch (err) {
-        console.error('Refine failed:', err);
-        // fall back to detectedText
+        console.error('LLM call failed:', err);
+        // fallback to raw joined words
+        speakText = confirmedWords.join(' ');
     } finally {
         hideLoadingOverlay();
     }
 
-    if (!speakText || speakText === 'Click "Start Camera" to begin detection' || speakText === '--') {
-        showTemporaryMessage('No text to speak', 'warning');
+    if (!speakText) {
+        showTemporaryMessage('No sentence to speak', 'warning');
         return;
     }
 

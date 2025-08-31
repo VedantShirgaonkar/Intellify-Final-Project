@@ -1,6 +1,11 @@
 # Convert text to gloss for video extraction and concatenation
 import os
+import logging
 from openai import OpenAI
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 try:
     from dotenv import load_dotenv
@@ -14,6 +19,7 @@ client = OpenAI()
 
 # API Call
 def text_to_gloss(sentence: str):
+    logger.info("🤖 LLM Call: text_to_gloss - Input: %s", sentence)
     prompt = f"""
     You are a sign language gloss generator.
     Convert the following English sentence into simplified ASL gloss (UPPERCASE keywords only, drop articles like 'the', 'is'):
@@ -30,7 +36,33 @@ def text_to_gloss(sentence: str):
     )
     
     gloss = response.choices[0].message.content.strip()
+    logger.info("✅ LLM Response: text_to_gloss - Output: %s", gloss)
     return gloss
+
+
+def gloss_to_english_llm(gloss_tokens):
+    """Convert gloss tokens back to natural English sentence using LLM"""
+    logger.info("🤖 LLM Call: gloss_to_english_llm - Input: %s", gloss_tokens)
+    gloss_string = ' '.join(gloss_tokens)
+    
+    prompt = f"""
+    You are a sign language interpreter. Convert the following ASL gloss tokens into a natural English sentence.
+    
+    Gloss tokens: {gloss_string}
+    
+    Provide a grammatically correct English sentence:
+    """
+    
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=100,
+        temperature=0.3
+    )
+    
+    sentence = response.choices[0].message.content.strip()
+    logger.info("✅ LLM Response: gloss_to_english_llm - Output: %s", sentence)
+    return sentence
 
 
 import os
@@ -110,13 +142,17 @@ def concat_videos_speed(video_files, output_file, speed=1.0):
 # Function to convert sentence to gloss tokens
 def sentence_to_gloss_tokens(sentence, available_tokens=None):
     """Convert sentence to gloss and return tokens list"""
+    logger.info("🤖 LLM Call: sentence_to_gloss_tokens - Input: %s", sentence)
     gloss = text_to_gloss(sentence)
     tokens = gloss.lower().split()
     
     # Filter by available tokens if provided
     if available_tokens:
+        original_count = len(tokens)
         tokens = [token for token in tokens if token in available_tokens]
+        logger.info("🔍 Filtered tokens from %d to %d based on available videos", original_count, len(tokens))
     
+    logger.info("✅ LLM Response: sentence_to_gloss_tokens - Output: %s", tokens)
     return tokens
 
 

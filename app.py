@@ -28,7 +28,7 @@ mp_drawing = mp.solutions.drawing_utils
 # We'll import within request handlers when needed.
 
 # Project model/utils
-from model import DETR
+#from model import DETR
 try:
     from utils.setup import get_classes, get_colors
     from utils.boxes import rescale_bboxes
@@ -296,6 +296,70 @@ def model_status():
 def health_check():
     return jsonify({'status': 'ok', 'model_loaded': model is not None})
 
+@app.route('/test-llm', methods=['GET', 'POST'])
+def test_llm():
+    """Test endpoint to manually check LLM calls"""
+    try:
+        logger.info("🧪 TEST-LLM endpoint called")
+        
+        # Check environment
+        openai_key = os.getenv('OPENAI_API_KEY')
+        if not openai_key:
+            return jsonify({
+                'error': 'No OpenAI API key found',
+                'env_check': False
+            }), 400
+        
+        logger.info("🔑 OpenAI API key found (length: %d)", len(openai_key))
+        
+        # Test import
+        try:
+            from revtrans import text_to_gloss, gloss_to_english_llm, sentence_to_gloss_tokens
+            logger.info("✅ Successfully imported LLM functions")
+        except Exception as e:
+            logger.error("❌ Failed to import LLM functions: %s", e)
+            return jsonify({
+                'error': f'Import failed: {e}',
+                'import_check': False
+            }), 500
+        
+        # Test basic LLM call
+        test_sentence = "We are going to college"
+        logger.info("🧪 Testing with sentence: %s", test_sentence)
+        
+        # Test text_to_gloss
+        gloss_result = text_to_gloss(test_sentence)
+        logger.info("✅ text_to_gloss result: %s", gloss_result)
+        
+        # Test sentence_to_gloss_tokens
+        available_tokens = _list_available_video_tokens()
+        tokens_result = sentence_to_gloss_tokens(test_sentence, available_tokens)
+        logger.info("✅ sentence_to_gloss_tokens result: %s", tokens_result)
+        
+        # Test gloss_to_english_llm
+        test_tokens = ["we", "go", "college"]
+        english_result = gloss_to_english_llm(test_tokens)
+        logger.info("✅ gloss_to_english_llm result: %s", english_result)
+        
+        return jsonify({
+            'status': 'success',
+            'env_check': True,
+            'import_check': True,
+            'test_input': test_sentence,
+            'text_to_gloss': gloss_result,
+            'sentence_to_gloss_tokens': tokens_result,
+            'gloss_to_english_llm': english_result,
+            'available_tokens_count': len(available_tokens)
+        }), 200
+        
+    except Exception as e:
+        logger.error("❌ LLM test failed: %s", str(e))
+        return jsonify({
+            'error': str(e),
+            'status': 'failed'
+        }), 500
+
+
 @app.errorhandler(413)
 def too_large(e):
     return jsonify({'error': 'Payload too large'}), 413
@@ -309,40 +373,52 @@ def not_found(e):
 
 @app.route('/process-confirmed-words', methods=['POST'])
 def process_confirmed_words():
+    logger.info("[LLM Flow] ◀️ Enter /process-confirmed-words")
     try:
-        # Get the confirmedWords array from the request
-        data = request.get_json()  # Use get_json() for better error handling
-        if not data:
-            return jsonify({'error': 'Invalid JSON payload'}), 400
+        # Force parse JSON or throw
+        data = request.get_json(force=True)
+        logger.info("[LLM Flow] 📨 Raw JSON payload: %r", data)
 
-        confirmed_words = data.get('confirmedWords', [])
-        
-        if not confirmed_words or not isinstance(confirmed_words, list):
-            return jsonify({'error': 'Invalid or missing "confirmedWords". Expected a non-empty list.'}), 400
+        confirmed_words = data.get('confirmedWords')
+        if not isinstance(confirmed_words, list) or not confirmed_words:
+            logger.warning("[LLM Flow] ⚠️ Invalid confirmedWords: %r", confirmed_words)
+            return jsonify({
+                'error': 'Invalid or missing "confirmedWords". Expected a non-empty list.'
+            }), 400
 
-        # Log the received confirmed words for debugging
-        logger.info("Received confirmed words: %s", confirmed_words)
+        logger.info("[LLM Flow] 🔍 confirmedWords list: %r", confirmed_words)
 
-        # Lazy import to avoid startup failures when no API key is present
+        # Fallback if no API key
+        openai_key = os.getenv('OPENAI_API_KEY')
+        if not openai_key or not openai_key.strip():
+            logger.warning("[LLM Flow] 🔑 OPENAI_API_KEY missing, using fallback")
+            fallback = ' '.join(confirmed_words).title()
+            logger.info("[LLM Flow] ✅ Fallback sentence: %r", fallback)
+            return jsonify({'sentence': fallback}), 200
+
+        # Attempt LLM call
         try:
-            from revtrans import gloss_to_english_llm as _gloss_to_english_llm
-        except Exception as ie:
-            logger.error("revtrans import failed: %s", ie)
-            return jsonify({'error': 'LLM module unavailable. Set OPENAI_API_KEY.'}), 503
+            logger.info("[LLM Flow] 🤖 Importing gloss_to_english_llm")
+            from revtrans import gloss_to_english_llm
+            logger.info("[LLM Flow] 🤖 Calling LLM with tokens: %r", confirmed_words)
+            sentence = gloss_to_english_llm(confirmed_words)
+            logger.info("[LLM Flow] ✅ LLM returned: %r", sentence)
+            return jsonify({'sentence': sentence}), 200
 
-        # Call the LLM to convert tokens to an English sentence
-        gloss = _gloss_to_english_llm(confirmed_words)
+        except ImportError as ie:
+            logger.error("[LLM Flow] ❌ revtrans import error: %s", ie)
+        except Exception as e:
+            logger.error("[LLM Flow] ❌ LLM call error: %s\n%s", e, traceback.format_exc())
 
-        # Return the refined output
-        return jsonify({'gloss': gloss}), 200
-    except KeyError as e:
-        logger.error("KeyError: Missing key in request data: %s", str(e))
-        return jsonify({'error': f'Missing key: {str(e)}'}), 400
+        # Final fallback
+        fallback = ' '.join(confirmed_words).title()
+        logger.info("[LLM Flow] ✅ Final fallback sentence: %r", fallback)
+        return jsonify({'sentence': fallback}), 200
+
     except Exception as e:
-        logger.error("Error processing confirmed words: %s\n%s", str(e), traceback.format_exc())
+        logger.error("[LLM Flow] Handler exception: %s\n%s", e, traceback.format_exc())
         return jsonify({'error': 'Internal server error'}), 500
-
-
+    
 @app.route('/outputs/<path:filename>', methods=['GET'])
 def serve_output_file(filename: str):
     """Serve generated files from outputs/ with basic HTTP Range support for videos.
@@ -570,15 +646,20 @@ def reverse_translate_video():
         # Prefer sentence input via revtrans if provided
         if isinstance(text, str) and text.strip():
             try:
+                logger.info("🤖 Attempting to import LLM function: sentence_to_gloss_tokens")
                 from revtrans import sentence_to_gloss_tokens as _sentence_to_gloss_tokens
+                logger.info("✅ LLM function imported successfully")
             except Exception as ie:
-                logger.warning('revtrans.sentence_to_gloss_tokens import failed, falling back: %s', ie)
+                logger.warning('❌ revtrans.sentence_to_gloss_tokens import failed, falling back: %s', ie)
                 _sentence_to_gloss_tokens = None
 
             if _sentence_to_gloss_tokens is not None:
                 available = _list_available_video_tokens()
+                logger.info("🤖 Making LLM call to convert text to gloss tokens: %s", text.strip())
                 gloss_tokens = _sentence_to_gloss_tokens(text.strip(), available_tokens=available)
+                logger.info("✅ LLM returned gloss tokens: %s", gloss_tokens)
             else:
+                logger.info("🔄 Using fallback text processing (no LLM)")
                 gloss_tokens = _text_to_gloss_tokens(text)
 
         if not isinstance(gloss_tokens, list) or not gloss_tokens:
