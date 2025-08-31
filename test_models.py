@@ -12,6 +12,7 @@ from tensorflow.keras.utils import to_categorical
 import tensorflow as tf
 from datetime import datetime
 from tqdm import tqdm
+import json
 
 mp_holistic = mp.solutions.holistic
 mp_drawing = mp.solutions.drawing_utils
@@ -45,7 +46,9 @@ def extract_keypoints(results):
 
 model = tf.keras.models.load_model('models/main_less_actions_model.h5')
 print('model loaded')
-label_map = np.load('models/label_map2.npy', allow_pickle=True).item()
+# Secure loading of label_map2.json instead of using pickle deserialization
+with open('models/label_map2.json', 'r') as f:
+    label_map = json.load(f)
 print('label map loaded')
 actions = list(label_map.keys())
 
