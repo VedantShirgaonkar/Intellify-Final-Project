@@ -4,15 +4,112 @@ let availableVoices = [];
 let mediaRecorder = null;
 let recordedChunks = [];
 let isRecording = false;
-let hands = null;
-let faceMesh = null;
-let camera = null;
+// let hands = null;
+// let faceMesh = null;
+// let camera = null;
 let frameDetections = []
 let confirmedWords = ['you', 'sick', 'doctor']
 
+
+let inferInterval = null;
+
+async function startRealtimeInfer(videoEl) {
+    // Reduce inference rate significantly for better performance
+    const FPS = 2;  // Reduced from 3 to 2 - only 2 inferences per second
+    const WINDOW_SIZE = 4;  // Reduced from 6 to 4 - faster consensus
+    const PERIOD = 1000 / FPS;  // Now 500ms between inferences
+
+    // Smaller canvas for faster processing
+    const sendCanvas = document.createElement('canvas');
+    const sendCtx = sendCanvas.getContext('2d');
+    sendCanvas.width = 160;  // Reduced from 224 to 160
+    sendCanvas.height = 160; // Reduced from 224 to 160
+
+    if (inferInterval) clearInterval(inferInterval);
+    
+    // Track if inference is in progress to prevent overlapping requests
+    let inferenceInProgress = false;
+    
+    inferInterval = setInterval(async () => {
+        // Skip if previous inference still running
+        if (inferenceInProgress || !videoEl || videoEl.readyState < 2) return;
+        
+        inferenceInProgress = true;
+        
+        try {
+            sendCtx.drawImage(videoEl, 0, 0, sendCanvas.width, sendCanvas.height);
+            const blob = await new Promise(res => sendCanvas.toBlob(res, 'image/jpeg', 0.6)); // Reduced quality from 0.8 to 0.6
+            if (!blob) return;
+
+            const form = new FormData();
+            form.append('frame', blob, 'frame.jpg');
+            // Remove annotated frame request to reduce processing time
+            // form.append('return_annotated', 'true'); 
+
+            const resp = await fetch('/infer-frame', { 
+                method: 'POST', 
+                body: form,
+                signal: AbortSignal.timeout(2000) // 2 second timeout
+            });
+            if (!resp.ok) return;
+            
+            const data = await resp.json();
+
+            if (data) {
+                // Only record valid detections
+                const label = data.detected_sign;
+                const rawConf = data.confidence || 0;
+                
+                if (label && rawConf >= 0.7) { // Reduced threshold from 0.8 to 0.7
+                    frameDetections.push(label);
+                }
+                
+                // When we have enough frames, pick the majority word
+                if (frameDetections.length >= WINDOW_SIZE) {
+                    const freq = {};
+                    frameDetections.forEach(w => { freq[w] = (freq[w] || 0) + 1; });
+                    const majority = Object.keys(freq).reduce((a, b) => freq[a] > freq[b] ? a : b);
+                    confirmedWords.push(majority);
+                    console.log('✅ Confirmed words so far:', confirmedWords);
+                    
+                    // Update displayed text to the majority vote
+                    document.getElementById('detectedText').textContent = majority;
+                    frameDetections = [];
+                } else {
+                    // For intermediate frames, still show live detection
+                    if (data.detected_sign) {
+                        document.getElementById('detectedText').textContent = data.detected_sign;
+                    }
+                }
+                
+                // Update confidence bar
+                const conf = Math.round((data.confidence || 0) * 100);
+                const confEl = document.getElementById('confidence-value');
+                const barEl = document.getElementById('confidence-fill');
+                if (confEl) confEl.textContent = `${conf}%`;
+                if (barEl) barEl.style.width = `${conf}%`;
+
+                // Remove annotated frame processing to reduce lag
+                // if (data.annotated_frame) { ... }
+            }
+        } catch (e) {
+            // ignore transient errors
+        } finally {
+            inferenceInProgress = false;
+        }
+    }, PERIOD);
+}
+
+function stopRealtimeInfer() {
+    if (inferInterval) {
+        clearInterval(inferInterval);
+        inferInterval = null;
+    }
+}
+
 // Wait for the page to load before initializing MediaPipe
 window.addEventListener('load', async function () {
-    await initializeMediaPipe();
+ //   await initializeMediaPipe();
     await checkModelStatus();
 
     // Load voices for testing
@@ -38,207 +135,6 @@ window.addEventListener('load', async function () {
     }
 });
 
-async function initializeMediaPipe() {
-    try {
-        // Initialize MediaPipe Hands
-        hands = new Hands({
-            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
-        });
-        hands.setOptions({
-            maxNumHands: 2,
-            modelComplexity: 1,
-            minDetectionConfidence: 0.5,
-            minTrackingConfidence: 0.5,
-        });
-
-        // Initialize MediaPipe Face Mesh
-        faceMesh = new FaceMesh({
-            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
-        });
-        faceMesh.setOptions({
-            maxNumFaces: 1,
-            refineLandmarks: true,
-            minDetectionConfidence: 0.5,
-            minTrackingConfidence: 0.5,
-        });
-
-        // Set up canvas and video elements
-        const videoElement = document.getElementById('videoElement');
-        const canvasElement = document.getElementById('canvasOverlay');
-        const canvasCtx = canvasElement.getContext('2d');
-
-        // Set canvas size to match container
-        function resizeCanvas() {
-            const cameraFeed = document.querySelector('.camera-feed');
-            canvasElement.width = cameraFeed.clientWidth;
-            canvasElement.height = cameraFeed.clientHeight;
-        }
-
-        resizeCanvas();
-        window.addEventListener('resize', resizeCanvas);
-
-        // Set up MediaPipe results handlers
-        let lastDetections = null;
-        let lastDetectionsAt = 0;
-
-        hands.onResults((results) => {
-            // Clear canvas
-            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-
-            // Draw hand landmarks if detected
-            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-                for (const landmarks of results.multiHandLandmarks) {
-                    // Draw connections
-                    drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS,
-                        { color: '#00FF41', lineWidth: 2 });
-                    // Draw landmarks
-                    drawLandmarks(canvasCtx, landmarks,
-                        { color: '#FF0041', lineWidth: 1, radius: 3 });
-                }
-                console.log(`Detected ${results.multiHandLandmarks.length} hand(s)`);
-            }
-
-            // Draw latest model detections (from backend) if recent
-            if (lastDetections && (performance.now() - lastDetectionsAt) < 1000) {
-                const sx = canvasElement.width / 224;
-                const sy = canvasElement.height / 224;
-                for (const det of lastDetections) {
-                    if (!det || !det.bbox) continue;
-                    const [x1, y1, x2, y2] = det.bbox;
-                    const rx1 = Math.round(x1 * sx);
-                    const ry1 = Math.round(y1 * sy);
-                    const rx2 = Math.round(x2 * sx);
-                    const ry2 = Math.round(y2 * sy);
-
-                    // box
-                    canvasCtx.strokeStyle = '#00ff88';
-                    canvasCtx.lineWidth = 4;
-                    canvasCtx.strokeRect(rx1, ry1, rx2 - rx1, ry2 - ry1);
-
-                    // label bg
-                    const label = `${det.class || 'object'} ${(det.confidence ? Math.round(det.confidence * 100) : 0)}%`;
-                    canvasCtx.font = '16px Segoe UI, sans-serif';
-                    const metrics = canvasCtx.measureText(label);
-                    const padding = 6;
-                    const lh = 22;
-                    canvasCtx.fillStyle = '#003322cc';
-                    canvasCtx.fillRect(rx1, Math.max(0, ry1 - lh), metrics.width + padding * 2, lh);
-
-                    // label text
-                    canvasCtx.fillStyle = '#ffffff';
-                    canvasCtx.fillText(label, rx1 + padding, Math.max(14, ry1 - 6));
-                }
-            }
-        });
-
-        faceMesh.onResults((results) => {
-            // Draw face mesh if detected (overlay on existing canvas content)
-            if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
-                for (const landmarks of results.multiFaceLandmarks) {
-                    // Draw face tesselation (subtle)
-                    drawConnectors(canvasCtx, landmarks, FACEMESH_TESSELATION,
-                        { color: '#C0C0C070', lineWidth: 1 });
-                    // Draw eyes
-                    drawConnectors(canvasCtx, landmarks, FACEMESH_RIGHT_EYE,
-                        { color: '#FF3030', lineWidth: 1 });
-                    drawConnectors(canvasCtx, landmarks, FACEMESH_LEFT_EYE,
-                        { color: '#30FF30', lineWidth: 1 });
-                    // Draw lips
-                    drawConnectors(canvasCtx, landmarks, FACEMESH_LIPS,
-                        { color: '#E0E0E0', lineWidth: 1 });
-                }
-                console.log(`Detected ${results.multiFaceLandmarks.length} face(s)`);
-            }
-        });
-
-        console.log('MediaPipe initialized successfully');
-
-        // Prepare an offscreen canvas for frame capture
-        const sendCanvas = document.createElement('canvas');
-        const sendCtx = sendCanvas.getContext('2d');
-        let inferInterval = null;
-
-        async function startRealtimeInfer(videoEl) {
-            // Throttle to balance latency and load (increase FPS and reduce window for faster confirmation)
-            const FPS = 10; // increased to 10 FPS for faster updates
-            const WINDOW_SIZE = 10; // frames needed for confirmation window
-            const PERIOD = 1000 / FPS;
-
-            // Match capture size to model input to reduce bandwidth
-            sendCanvas.width = 224;
-            sendCanvas.height = 224;
-
-            if (inferInterval) clearInterval(inferInterval);
-            inferInterval = setInterval(async () => {
-                if (!videoEl || videoEl.readyState < 2) return;
-                try {
-                    sendCtx.drawImage(videoEl, 0, 0, sendCanvas.width, sendCanvas.height);
-                    const blob = await new Promise(res => sendCanvas.toBlob(res, 'image/jpeg', 0.8));
-                    if (!blob) return;
-
-                    const form = new FormData();
-                    form.append('frame', blob, 'frame.jpg');
-
-                    const resp = await fetch('/infer-frame', { method: 'POST', body: form });
-                    if (!resp.ok) return; // silently drop frame on error
-                    const data = await resp.json();
-
-                    if (data) {
-                        // Only record valid detections (non-null, above confidence threshold)
-                        const label = data.detected_sign;
-                        const rawConf = data.confidence || 0;
-                        if (label && rawConf >= 0.8) {
-                            frameDetections.push(label);
-                        }
-                        // When we have enough frames, pick the majority word
-                        if (frameDetections.length >= WINDOW_SIZE) {
-                            const freq = {};
-                            frameDetections.forEach(w => { freq[w] = (freq[w] || 0) + 1; });
-                            const majority = Object.keys(freq).reduce((a, b) => freq[a] > freq[b] ? a : b);
-                            confirmedWords.push(majority);
-                            console.log('✅ Confirmed words so far:', confirmedWords);
-                            // Update displayed text to the majority vote
-                            document.getElementById('detectedText').textContent = majority;
-                            frameDetections = [];
-                        } else {
-                            // For intermediate frames, still show live detection
-                            if (data.detected_sign) {
-                                document.getElementById('detectedText').textContent = data.detected_sign;
-                            }
-                        }
-                        // Update confidence bar
-                        const conf = Math.round((data.confidence || 0) * 100);
-                        const confEl = document.getElementById('confidence-value') || document.querySelector('.confidence-label span:last-child');
-                        const barEl = document.getElementById('confidence-fill') || document.querySelector('.confidence-fill');
-                        if (confEl) confEl.textContent = `${conf}%`;
-                        if (barEl) barEl.style.width = `${conf}%`;
-                        // Update last detections for overlay drawing
-                        if (Array.isArray(data.detections)) {
-                            lastDetections = data.detections;
-                            lastDetectionsAt = performance.now();
-                        }
-                    }
-                } catch (e) {
-                    // ignore transient errors
-                }
-            }, PERIOD);
-        }
-
-        // Expose helpers on window for reuse in camera toggle
-        window.__startRealtimeInfer = startRealtimeInfer;
-        window.__realtimeInferStop = () => { if (inferInterval) { clearInterval(inferInterval); inferInterval = null; } };
-        window.__resetOverlays = () => {
-            try {
-                canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-            } catch (_) { /* ignore */ }
-            lastDetections = null;
-            lastDetectionsAt = 0;
-        };
-
-    } catch (error) {
-        console.error('Error initializing MediaPipe:', error);
-    }
-}
 
 async function sendConfirmedWords(words = confirmedWords) {
     const response = await fetch('/process-confirmed-words', {
@@ -257,12 +153,13 @@ async function toggleCamera() {
 
     if (!videoStream) {
         try {
-            // Request camera access
+            // Request camera access with lower resolution for better performance
             videoStream = await navigator.mediaDevices.getUserMedia({
                 video: {
-                    width: { ideal: 1280 },
-                    height: { ideal: 720 },
-                    facingMode: 'user'
+                    width: { ideal: 640 },  // Reduced from 1280
+                    height: { ideal: 480 }, // Reduced from 720
+                    facingMode: 'user',
+                    frameRate: { ideal: 15, max: 20 } // Limit frame rate
                 },
                 audio: false
             });
@@ -272,66 +169,26 @@ async function toggleCamera() {
             placeholder.style.display = 'none';
             button.textContent = 'Stop Camera';
             button.style.background = 'linear-gradient(135deg, #ff4757, #ff3838)';
+            
             // Set analyzing placeholder until a confident detection is made
             const detectedEl = document.getElementById('detectedText');
             if (detectedEl) detectedEl.textContent = 'Analyzing…';
 
-            // Initialize camera for MediaPipe
-            if (hands && faceMesh) {
-                camera = new Camera(video, {
-                    onFrame: async () => {
-                        try {
-                            await hands.send({ image: video });
-                            await faceMesh.send({ image: video });
-                        } catch (error) {
-                            console.error('Error processing frame:', error);
-                        }
-                    },
-                    width: 1280,
-                    height: 720,
-                });
-                camera.start();
-                console.log('Camera started for MediaPipe processing');
-            }
             // Show overlay frame when camera is on
             const overlayDiv = document.querySelector('.camera-overlay');
             if (overlayDiv) overlayDiv.style.display = 'block';
-            // Start realtime inference without saving video
-            if (window.__startRealtimeInfer) window.__startRealtimeInfer(video);
+            
+            // Start realtime inference without MediaPipe
+            startRealtimeInfer(video);
 
         } catch (error) {
             console.error('Error accessing camera:', error);
             alert('Unable to access camera. Please ensure you have granted camera permissions.');
         }
     } else {
-        // Stop realtime infer if running
-        if (window.__realtimeInferStop) window.__realtimeInferStop();
-
-        // Stop camera
-        if (camera) {
-            camera.stop();
-            camera = null;
-        }
-        videoStream.getTracks().forEach(track => track.stop());
-        videoStream = null;
-        video.style.display = 'none';
-        placeholder.style.display = 'block';
-        button.textContent = 'Start Camera';
-        button.style.background = 'var(--gradient-primary)';
-        // Hide overlay frame and clear any drawn boxes when camera is off
-        const overlayDiv = document.querySelector('.camera-overlay');
-        if (overlayDiv) overlayDiv.style.display = 'none';
-        if (window.__resetOverlays) window.__resetOverlays();
-        // Reset detected text to initial prompt
-        const detectedEl2 = document.getElementById('detectedText');
-        if (detectedEl2) detectedEl2.textContent = 'Click "Start Camera" to begin detection';
+        // ...existing code...
     }
 }
-
-
-
-
-
 // Deprecated: recording flow not used in realtime mode but kept for fallback/demo
 function startRecording() {
     try {

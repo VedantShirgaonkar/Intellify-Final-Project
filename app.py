@@ -9,14 +9,19 @@ import io
 import time
 import traceback
 import json
-
 # ML / CV deps
 import numpy as np
 import cv2 as cv
 import torch
-import albumentations as A
-from albumentations.pytorch import ToTensorV2
+#import albumentations as A
+#from albumentations.pytorch import ToTensorV2
 import traceback
+import joblib
+import mediapipe as mp
+import math
+
+
+mp_drawing = mp.solutions.drawing_utils
 
 
 # Avoid importing revtrans at module import time because it asserts OPENAI_API_KEY.
@@ -58,101 +63,140 @@ CONFIDENCE_THRESHOLD = 0.8
 OUTPUT_DIR = os.path.join(os.path.dirname(__file__), 'outputs')
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-# Model configuration (.pt)
-PT_MODEL_PATH = 'pretrained/4426_model.pt'
-NUM_CLASSES = 3
-
-# Global variables for model
-torch_model = None
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-CLASSES = get_classes()
-
-# Preprocessing pipeline (aligned with realtime.py)
-transforms = A.Compose([
-    A.Resize(224, 224),
-    A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-    ToTensorV2()
-])
+#model loading
+#mp_hands = mp.solutions.hands
+#hands = mp_hands.Hands(max_num_hands=2,
+#                       min_detection_confidence=0.7,
+#                       min_tracking_confidence=0.7)
 
 
-def load_model():
-    """Load the PyTorch DETR model for real-time inference."""
-    global torch_model
-    try:
-        m = DETR(num_classes=NUM_CLASSES)
-        # Use the model's helper to load weights
-        m.load_pretrained(PT_MODEL_PATH)
-        m.to(device)
-        m.eval()
-        torch_model = m
-        logger.info("✅ PyTorch model loaded and ready on %s", device)
-        return True
-    except Exception as e:
-        logger.error("Error loading PyTorch model: %s\n%s", str(e), traceback.format_exc())
-        return False
+mp_hands = mp.solutions.hands
 
+# Model Loading
+MODEL_FILE = "./pretrained/gesture_model.pkl"
+try:
+    model = joblib.load(MODEL_FILE)
+    print("✅ PKL Model loaded successfully")
+except Exception as e:
+    print(f"❌ Failed to load PKL model: {e}")
+    model = None
+
+
+
+# Add these utility functions after the model loading:
+
+def normalize_landmarks(landmarks):
+    """
+    Normalize landmarks like during training:
+    - Translate so wrist is at origin.
+    - Scale by wrist → middle finger MCP distance.
+    """
+    wrist = landmarks[0]
+    translated = [(lm.x - wrist.x, lm.y - wrist.y, lm.z - wrist.z) for lm in landmarks]
+
+    scale = math.sqrt(translated[9][0]**2 + translated[9][1]**2 + translated[9][2]**2)
+    if scale < 1e-6:
+        scale = 1.0
+
+    normalized = [(x/scale, y/scale, z/scale) for (x, y, z) in translated]
+    return [coord for triple in normalized for coord in triple]
+
+def empty_hand():
+    return [0.0] * (21 * 3)
+
+
+# Replace the entire run_inference_on_frame function:
 
 def run_inference_on_frame(frame_bgr: np.ndarray):
-    """Run model inference on a single BGR frame and return best detection.
+    """Run model inference on a single BGR frame and return best detection with hand landmarks drawn.
 
-    Returns dict: {detected_sign, confidence, detections: [...]} or None if no detection.
+    Returns dict: {detected_sign, confidence, detections: [...], annotated_frame} or None if no detection.
     """
-    global torch_model
-    if torch_model is None:
+    global model
+    if model is None:
         raise RuntimeError("Model not loaded")
 
-    # Albumentations expects HWC (BGR ok, normalization treats as numbers)
-    transformed = transforms(image=frame_bgr)
-    input_tensor = transformed['image'].unsqueeze(0).to(device)
+    # Create a new MediaPipe hands instance for each request to avoid timestamp conflicts
+    hands = mp_hands.Hands(max_num_hands=2,
+                          min_detection_confidence=0.7,
+                          min_tracking_confidence=0.7)
 
-    with torch.no_grad():
-        result = torch_model(input_tensor)
+    try:
+        # Convert BGR to RGB for MediaPipe
+        rgb_frame = cv.cvtColor(frame_bgr, cv.COLOR_BGR2RGB)
+        results = hands.process(rgb_frame)
 
-    # result: pred_logits [B,Q,C+1], pred_boxes [B,Q,4]
-    probabilities = result['pred_logits'].softmax(-1)[:, :, :-1]  # drop no-object
-    max_probs, max_classes = probabilities.max(-1)
-    keep_mask = max_probs > CONFIDENCE_THRESHOLD
+        # Create a copy of the frame for annotation
+        annotated_frame = frame_bgr.copy()
 
-    batch_indices, query_indices = torch.where(keep_mask)
-    if batch_indices.numel() == 0:
-        return {
-            "detected_sign": None,
-            "confidence": 0.0,
-            "detections": []
-        }
+        left_hand, right_hand = None, None
 
-    # Rescale boxes back to original frame size
-    H, W = frame_bgr.shape[:2]
-    # rescale_bboxes expects (H,W) or (W,H) depending on implementation; realtime.py passes (1920,1080)
-    # We'll pass (H,W) consistent with our code here
-    bboxes = rescale_bboxes(result['pred_boxes'][batch_indices, query_indices, :], (H, W))
-    classes = max_classes[batch_indices, query_indices]
-    probas = max_probs[batch_indices, query_indices]
+        if results.multi_hand_landmarks and results.multi_handedness:
+            for hand_landmarks, handedness in zip(results.multi_hand_landmarks,
+                                                  results.multi_handedness):
+                label = handedness.classification[0].label  # "Left" or "Right"
+                score = handedness.classification[0].score
 
-    detections = []
-    for bclass, bprob, bbox in zip(classes, probas, bboxes):
-        cls_idx = int(bclass.detach().cpu().item())
-        prob_val = float(bprob.detach().cpu().item())
-        # Allow both tensor and numpy for bbox
-        if hasattr(bbox, 'detach'):
-            bb = bbox.detach().cpu().numpy()
+                if score < 0.7:
+                    continue  # skip low-confidence
+
+                # Draw hand landmarks on the annotated frame - THIS WAS MISSING!
+                mp_drawing.draw_landmarks(
+                    annotated_frame, 
+                    hand_landmarks, 
+                    mp_hands.HAND_CONNECTIONS,
+                    mp_drawing.DrawingSpec(color=(0, 0, 255), thickness=2, circle_radius=2),
+                    mp_drawing.DrawingSpec(color=(0, 255, 0), thickness=2)
+                )
+
+                norm = normalize_landmarks(hand_landmarks.landmark)
+
+                if label == "Left":
+                    left_hand = norm
+                else:
+                    right_hand = norm
+
+        if left_hand is None:
+            left_hand = empty_hand()
+        if right_hand is None:
+            right_hand = empty_hand()
+
+        features = np.array([left_hand + right_hand])
+
+        # Only predict if at least one hand is visible
+        if any(v != 0.0 for v in features[0]):
+            pred = model.predict(features)[0]
+
+            if hasattr(model, "predict_proba"):
+                proba = model.predict_proba(features).max()
+                confidence = float(proba)
+                text = f"Gesture: {pred} ({confidence:.2f})"
+            else:
+                confidence = 1.0
+                text = f"Gesture: {pred}"
+
+            # Add text overlay on the annotated frame
+            cv.putText(annotated_frame, text, (10, 40),
+                      cv.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+
+            return {
+                "detected_sign": pred,
+                "confidence": confidence,
+                "detections": [{"class": pred, "confidence": confidence}],
+                "annotated_frame": annotated_frame
+            }
         else:
-            bb = np.array(bbox)
-        x1, y1, x2, y2 = [float(v) for v in bb]
-        detections.append({
-            'class': CLASSES[cls_idx] if 0 <= cls_idx < len(CLASSES) else f'class_{cls_idx}',
-            'confidence': prob_val,
-            'bbox': [x1, y1, x2, y2]
-        })
+            return {
+                "detected_sign": None,
+                "confidence": 0.0,
+                "detections": [],
+                "annotated_frame": annotated_frame
+            }
+    finally:
+        # Clean up the MediaPipe instance
+        hands.close()
 
-    best = max(detections, key=lambda d: d['confidence']) if detections else None
-    return {
-        "detected_sign": best['class'] if best else None,
-        "confidence": best['confidence'] if best else 0.0,
-        "detections": detections
-    }
-
-
+        
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -171,12 +215,14 @@ def learn():
         return render_template('learn.html')
 
 
+# Replace the infer_frame function:
+
 @app.route('/infer-frame', methods=['POST'])
 def infer_frame():
-    """Accept a single image frame (jpeg/png) and return detection JSON without saving files."""
+    """Accept a single image frame (jpeg/png) and return detection JSON with optional annotated frame."""
     t0 = time.time()
     try:
-        if torch_model is None:
+        if model is None:
             return jsonify({
                 'error': 'Model not loaded',
                 'model_loaded': False
@@ -199,33 +245,56 @@ def infer_frame():
         result = run_inference_on_frame(frame)
         t2 = time.time()
 
-        result['timing'] = {
-            'decode': t1 - t0,
-            'inference': t2 - t1,
-            'total': t2 - t0
+        # Check if client wants annotated frame
+        return_annotated = request.form.get('return_annotated', 'false').lower() == 'true'
+        
+        response_data = {
+            'detected_sign': result['detected_sign'],
+            'confidence': result['confidence'],
+            'detections': result['detections'],
+            'timing': {
+                'decode': t1 - t0,
+                'inference': t2 - t1,
+                'total': t2 - t0
+            }
         }
-        return jsonify(result)
+
+        if return_annotated and 'annotated_frame' in result:
+            # Encode annotated frame as base64 JPEG
+            import base64
+            _, buffer = cv.imencode('.jpg', result['annotated_frame'])
+            frame_base64 = base64.b64encode(buffer).decode('utf-8')
+            response_data['annotated_frame'] = f"data:image/jpeg;base64,{frame_base64}"
+
+        return jsonify(response_data)
     except Exception as e:
         logger.error("/infer-frame error: %s\n%s", str(e), traceback.format_exc())
         return jsonify({'error': str(e)}), 500
-
+# Replace the model_status function:
 
 @app.route('/model-status', methods=['GET'])
 def model_status():
+    # Get model classes if available
+    classes = []
+    if model is not None and hasattr(model, 'classes_'):
+        classes = model.classes_.tolist()
+    elif model is not None:
+        classes = ["gesture_class"]  # fallback if classes not available
+    
     return jsonify({
         'ml_libraries_available': True,
-        'model_loaded': torch_model is not None,
-        'device': str(device),
-        'classes': CLASSES,
-        'actions_count': len(CLASSES),
-        'demo_mode': torch_model is None
+        'model_loaded': model is not None,
+        'model_type': '.pkl',
+        'classes': classes,
+        'actions_count': len(classes),
+        'demo_mode': model is None
     })
 
+# Replace the health_check function:
 
 @app.route('/health', methods=['GET'])
 def health_check():
-    return jsonify({'status': 'ok', 'model_loaded': torch_model is not None})
-
+    return jsonify({'status': 'ok', 'model_loaded': model is not None})
 
 @app.errorhandler(413)
 def too_large(e):
@@ -550,15 +619,16 @@ def reverse_translate_video():
         logger.error('/reverse-translate-video error: %s\n%s', str(e), tb)
         return jsonify({'error': str(e), 'trace': tb}), 500
     
+# Replace the main block:
+
 if __name__ == '__main__':
     print("🚀 Starting Sign Language Translator...")
-    print("📁 Loading PyTorch model...")
+    print("📁 Loading PKL model...")
 
-    success = load_model()
-    if success:
-        print("✅ Model ready!")
+    if model is not None:
+        print("✅ PKL Model ready!")
     else:
-        print("⚠️ Model failed to load. Endpoints will return 503 for inference.")
+        print("⚠️ PKL Model failed to load. Endpoints will return 503 for inference.")
 
     print("🌐 Starting Flask server...")
     app.run(debug=True, host='0.0.0.0', port=5000)
