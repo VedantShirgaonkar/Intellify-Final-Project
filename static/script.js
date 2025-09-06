@@ -8,7 +8,10 @@ let isRecording = false;
 // let faceMesh = null;
 // let camera = null;
 let frameDetections = []
-let confirmedWords = ['I', 'be', 'sad','toys','broke']
+let confirmedWords = []
+
+// Add letter inference interval variable at the top of your script
+let letterInferInterval = null;
 
 
 let inferInterval = null;
@@ -16,7 +19,7 @@ let inferInterval = null;
 async function startRealtimeInfer(videoEl) {
     // Reduce inference rate significantly for better performance
     const FPS = 2;  // Reduced from 3 to 2 - only 2 inferences per second
-    const WINDOW_SIZE = 4;  // Reduced from 6 to 4 - faster consensus
+    const WINDOW_SIZE = 1;  // Reduced from 6 to 4 - faster consensus
     const PERIOD = 1000 / FPS;  // Now 500ms between inferences
 
     // Smaller canvas for faster processing
@@ -194,9 +197,38 @@ async function toggleCamera() {
             alert('Unable to access camera. Please ensure you have granted camera permissions.');
         }
     } else {
-        // ...existing code...
+        // If camera is already active, stop it
+        stopCamera();
     }
 }
+
+// Stop and clean up the camera stream
+function stopCamera() {
+    const video = document.getElementById('videoElement');
+    const placeholder = document.getElementById('cameraPlaceholder');
+    const button = document.getElementById('cameraButton');
+    const overlay = document.querySelector('.camera-overlay');
+
+    if (videoStream) {
+        // Stop all media tracks
+        videoStream.getTracks().forEach(track => track.stop());
+        // Reset video element
+        video.srcObject = null;
+        video.style.display = 'none';
+        // Show placeholder again
+        if (placeholder) placeholder.style.display = 'block';
+        // Hide overlay
+        if (overlay) overlay.style.display = 'none';
+        // Reset button text and style
+        button.textContent = 'Start Camera';
+        button.style.background = ''; // revert to original styling
+        // Stop ongoing inference
+        stopRealtimeInfer();
+        // Clear stream reference
+        videoStream = null;
+    }
+}
+
 // Deprecated: recording flow not used in realtime mode but kept for fallback/demo
 function startRecording() {
     try {
@@ -1052,4 +1084,441 @@ function fillSampleGloss() {
     if (input) input.value = 'We are going to college for exam';
 }
 
-// (Reverted) Reverse translate helpers removed
+
+
+// Add this after your existing startRealtimeInfer function
+async function startRealtimeLetterInfer(videoEl) {
+    // Similar to gesture inference but for letters
+    const FPS = 3;  // Slightly higher for letter detection
+    const WINDOW_SIZE = 2;  // Faster consensus for letters
+    const PERIOD = 1000 / FPS;
+
+    const sendCanvas = document.createElement('canvas');
+    const sendCtx = sendCanvas.getContext('2d');
+    sendCanvas.width = 160;
+    sendCanvas.height = 160;
+
+    if (letterInferInterval) clearInterval(letterInferInterval);
+    
+    let inferenceInProgress = false;
+    
+    letterInferInterval = setInterval(async () => {
+        if (inferenceInProgress || !videoEl || videoEl.readyState < 2) return;
+        
+        inferenceInProgress = true;
+        
+        try {
+            sendCtx.drawImage(videoEl, 0, 0, sendCanvas.width, sendCanvas.height);
+            const blob = await new Promise(res => sendCanvas.toBlob(res, 'image/jpeg', 0.6));
+            if (!blob) return;
+
+            const form = new FormData();
+            form.append('frame', blob, 'frame.jpg');
+
+            const resp = await fetch('/infer-letter', { 
+                method: 'POST', 
+                body: form,
+                signal: AbortSignal.timeout(2000)
+            });
+            if (!resp.ok) return;
+            
+            const data = await resp.json();
+
+            if (data && data.detected_letter) {
+                // Update letter display elements
+                const letterEl = document.getElementById('detectedLetter');
+                if (letterEl) letterEl.textContent = data.detected_letter;
+                
+                const conf = Math.round((data.confidence || 0) * 100);
+                const confEl = document.getElementById('letter-confidence-value');
+                const barEl = document.getElementById('letter-confidence-fill');
+                if (confEl) confEl.textContent = `${conf}%`;
+                if (barEl) barEl.style.width = `${conf}%`;
+            }
+        } catch (e) {
+            // ignore transient errors
+        } finally {
+            inferenceInProgress = false;
+        }
+    }, PERIOD);
+}
+
+
+// Add stop function
+function stopRealtimeLetterInfer() {
+    if (letterInferInterval) {
+        clearInterval(letterInferInterval);
+        letterInferInterval = null;
+    }
+}
+
+// Add toggle function for letter mode
+async function toggleLetterMode() {
+    const video = document.getElementById('videoElement');
+    
+    if (currentMode === 'gesture') {
+        // Switch to letter mode
+        stopRealtimeInfer();
+        startRealtimeLetterInfer(video);
+        currentMode = 'letter';
+        document.getElementById('modeButton').textContent = 'Switch to Gesture Mode';
+    } else {
+        // Switch to gesture mode
+        stopRealtimeLetterInfer();
+        startRealtimeInfer(video);
+        currentMode = 'gesture';
+        document.getElementById('modeButton').textContent = 'Switch to Letter Mode';
+    }
+}
+
+// Mode tracking and letter spelling
+let currentMode = 'gesture';
+let spelledLetters = [];
+
+// Toggle between gesture and letter detection modes
+function toggleDetectionMode() {
+    const video = document.getElementById('videoElement');
+    const modeButton = document.getElementById('modeButton');
+    const gestureCard = document.getElementById('gestureCard');
+    const letterCard = document.getElementById('letterCard');
+    const audioCard = document.getElementById('audioCard');
+    const spellingCard = document.getElementById('spellingCard');
+    const refineOutput = document.getElementById('refineOutput');
+    
+    if (currentMode === 'gesture') {
+        // Switch to letter mode
+        stopRealtimeInfer();
+        if (video && video.srcObject) {
+            startRealtimeLetterInfer(video);
+        }
+        currentMode = 'letter';
+        
+        // Update UI
+        modeButton.innerHTML = '<i class="fas fa-hand-paper"></i> Switch to Gesture Mode';
+        gestureCard.style.display = 'none';
+        letterCard.style.display = 'block';
+        audioCard.style.display = 'none';
+        spellingCard.style.display = 'block';
+        refineOutput.style.display = 'none';
+        
+    } else {
+        // Switch to gesture mode
+        stopRealtimeLetterInfer();
+        if (video && video.srcObject) {
+            startRealtimeInfer(video);
+        }
+        currentMode = 'gesture';
+        
+        // Update UI
+        modeButton.innerHTML = '<i class="fas fa-font"></i> Switch to Letter Mode';
+        gestureCard.style.display = 'block';
+        letterCard.style.display = 'none';
+        audioCard.style.display = 'block';
+        spellingCard.style.display = 'none';
+        refineOutput.style.display = 'block';
+    }
+}
+
+// Clear spelled word
+function clearSpelling() {
+    spelledLetters = [];
+    document.getElementById('spelledWord').textContent = 'Start spelling...';
+}
+
+// Add letter to spelled word (call this when a letter is detected)
+function addToSpelling(letter) {
+    if (letter && letter !== spelledLetters[spelledLetters.length - 1]) {
+        spelledLetters.push(letter);
+        document.getElementById('spelledWord').textContent = spelledLetters.join('');
+    }
+}
+
+// =============================================================================
+// ALPHABET DETECTION SECTION - SEPARATE FROM MAIN TRANSLATOR
+// =============================================================================
+
+// Alphabet detection variables
+let alphabetVideoStream = null;
+let alphabetInferInterval = null;
+let alphabetSpelledLetters = [];
+let alphabetLetterHistory = [];
+let isAlphabetDetectionActive = false;
+
+// Start alphabet detection camera
+async function toggleAlphabetCamera() {
+    const video = document.getElementById('alphabetVideoElement');
+    const placeholder = document.getElementById('alphabetCameraPlaceholder');
+    const button = document.getElementById('alphabetCameraButton');
+    const statusDot = document.getElementById('alphabetStatusDot');
+    const status = document.getElementById('alphabetStatus');
+
+    if (!alphabetVideoStream) {
+        try {
+            // Request camera access
+            alphabetVideoStream = await navigator.mediaDevices.getUserMedia({
+                video: { 
+                    width: { ideal: 640 }, 
+                    height: { ideal: 480 },
+                    facingMode: 'user'
+                }
+            });
+            
+            video.srcObject = alphabetVideoStream;
+            video.style.display = 'block';
+            placeholder.style.display = 'none';
+            
+            button.innerHTML = '<i class="fas fa-pause"></i> Pause Detection';
+            button.classList.remove('primary');
+            button.classList.add('secondary');
+            
+            statusDot.style.backgroundColor = '#10b981';
+            status.textContent = 'Detecting';
+            
+            // Start letter detection
+            await startAlphabetInference(video);
+            
+        } catch (error) {
+            console.error('Error accessing camera for alphabet detection:', error);
+            showTemporaryMessage('Camera access denied for alphabet detection', 'error');
+        }
+    } else {
+        // Stop detection
+        stopAlphabetCamera();
+    }
+}
+
+// Stop alphabet detection camera
+function stopAlphabetCamera() {
+    const video = document.getElementById('alphabetVideoElement');
+    const placeholder = document.getElementById('alphabetCameraPlaceholder');
+    const button = document.getElementById('alphabetCameraButton');
+    const statusDot = document.getElementById('alphabetStatusDot');
+    const status = document.getElementById('alphabetStatus');
+
+    if (alphabetVideoStream) {
+        alphabetVideoStream.getTracks().forEach(track => track.stop());
+        alphabetVideoStream = null;
+    }
+    
+    stopAlphabetInference();
+    
+    video.style.display = 'none';
+    placeholder.style.display = 'flex';
+    
+    button.innerHTML = '<i class="fas fa-play"></i> Start Letter Detection';
+    button.classList.remove('secondary');
+    button.classList.add('primary');
+    
+    statusDot.style.backgroundColor = '#6b7280';
+    status.textContent = 'Ready';
+    
+    // Reset detection display
+    document.getElementById('alphabetDetectedLetter').textContent = '?';
+    document.getElementById('alphabet-confidence-value').textContent = '--';
+    document.getElementById('alphabet-confidence-fill').style.width = '0%';
+}
+
+// Start alphabet inference
+async function startAlphabetInference(videoEl) {
+    if (!videoEl) return;
+    
+    const FPS = 3; // 3 inferences per second for alphabet detection
+    const PERIOD = 1000 / FPS;
+    
+    // Create canvas for sending frames
+    const sendCanvas = document.createElement('canvas');
+    const sendCtx = sendCanvas.getContext('2d');
+    sendCanvas.width = 224; // Slightly larger for better letter recognition
+    sendCanvas.height = 224;
+    
+    if (alphabetInferInterval) clearInterval(alphabetInferInterval);
+    
+    let inferenceInProgress = false;
+    isAlphabetDetectionActive = true;
+    
+    alphabetInferInterval = setInterval(async () => {
+        if (inferenceInProgress || !videoEl || videoEl.readyState < 2 || !isAlphabetDetectionActive) return;
+        
+        inferenceInProgress = true;
+        
+        try {
+            // Draw video frame to canvas
+            sendCtx.drawImage(videoEl, 0, 0, sendCanvas.width, sendCanvas.height);
+            const blob = await new Promise(res => sendCanvas.toBlob(res, 'image/jpeg', 0.8));
+            if (!blob) return;
+
+            // Send to letter detection endpoint
+            const form = new FormData();
+            form.append('frame', blob, 'frame.jpg');
+
+            const response = await fetch('/infer-letter', {
+                method: 'POST',
+                body: form,
+                signal: AbortSignal.timeout(3000)
+            });
+
+            if (!response.ok) {
+                console.warn('Alphabet detection request failed:', response.status);
+                return;
+            }
+
+            const data = await response.json();
+            
+            if (data && data.detected_letter) {
+                updateAlphabetDisplay(data.detected_letter, data.confidence || 0);
+                
+                // Add to history if confidence is high enough
+                if (data.confidence > 0.8) {
+                    addLetterToHistory(data.detected_letter, data.confidence);
+                    
+                    // Auto-add to spelled word if confidence is very high
+                    if (data.confidence > 0.9) {
+                        addToAlphabetSpelling(data.detected_letter);
+                    }
+                }
+            } else {
+                // No letter detected
+                updateAlphabetDisplay('?', 0);
+            }
+            
+        } catch (error) {
+            if (error.name !== 'AbortError') {
+                console.warn('Alphabet inference error:', error);
+            }
+        } finally {
+            inferenceInProgress = false;
+        }
+    }, PERIOD);
+}
+
+// Stop alphabet inference
+function stopAlphabetInference() {
+    if (alphabetInferInterval) {
+        clearInterval(alphabetInferInterval);
+        alphabetInferInterval = null;
+    }
+    isAlphabetDetectionActive = false;
+}
+
+// Update alphabet detection display
+function updateAlphabetDisplay(letter, confidence) {
+    const letterEl = document.getElementById('alphabetDetectedLetter');
+    const confValueEl = document.getElementById('alphabet-confidence-value');
+    const confFillEl = document.getElementById('alphabet-confidence-fill');
+    
+    if (letterEl) letterEl.textContent = letter || '?';
+    
+    const confPercent = Math.round((confidence || 0) * 100);
+    if (confValueEl) confValueEl.textContent = `${confPercent}%`;
+    if (confFillEl) confFillEl.style.width = `${confPercent}%`;
+    
+    // Color-code the confidence
+    if (confFillEl) {
+        if (confPercent >= 80) {
+            confFillEl.style.backgroundColor = '#10b981'; // Green
+        } else if (confPercent >= 60) {
+            confFillEl.style.backgroundColor = '#f59e0b'; // Yellow
+        } else {
+            confFillEl.style.backgroundColor = '#ef4444'; // Red
+        }
+    }
+}
+
+// Add letter to alphabet spelling
+function addToAlphabetSpelling(letter) {
+    if (!letter || letter === '?') return;
+    
+    // Prevent duplicate consecutive letters
+    if (letter === alphabetSpelledLetters[alphabetSpelledLetters.length - 1]) return;
+    
+    alphabetSpelledLetters.push(letter.toUpperCase());
+    updateAlphabetSpelledWord();
+}
+
+// Update spelled word display
+function updateAlphabetSpelledWord() {
+    const spelledWordEl = document.getElementById('alphabetSpelledWord');
+    const wordLengthEl = document.getElementById('wordLength');
+    
+    if (alphabetSpelledLetters.length === 0) {
+        spelledWordEl.textContent = 'START SPELLING...';
+        spelledWordEl.style.color = '#9ca3af';
+    } else {
+        spelledWordEl.textContent = alphabetSpelledLetters.join('');
+        spelledWordEl.style.color = '#10b981';
+    }
+    
+    if (wordLengthEl) {
+        wordLengthEl.textContent = alphabetSpelledLetters.length;
+    }
+}
+
+// Clear alphabet spelling
+function clearAlphabetSpelling() {
+    alphabetSpelledLetters = [];
+    updateAlphabetSpelledWord();
+}
+
+// Add letter to history
+function addLetterToHistory(letter, confidence) {
+    const historyEl = document.getElementById('alphabetLetterHistory');
+    if (!historyEl || !letter || letter === '?') return;
+    
+    // Add to history array
+    alphabetLetterHistory.unshift({
+        letter: letter.toUpperCase(),
+        confidence: confidence,
+        timestamp: new Date()
+    });
+    
+    // Keep only last 10 letters
+    if (alphabetLetterHistory.length > 10) {
+        alphabetLetterHistory = alphabetLetterHistory.slice(0, 10);
+    }
+    
+    // Update display
+    updateLetterHistoryDisplay();
+}
+
+// Update letter history display
+function updateLetterHistoryDisplay() {
+    const historyEl = document.getElementById('alphabetLetterHistory');
+    if (!historyEl) return;
+    
+    if (alphabetLetterHistory.length === 0) {
+        historyEl.innerHTML = '<span style="color: #9ca3af; font-style: italic;">No letters detected yet</span>';
+        return;
+    }
+    
+    historyEl.innerHTML = alphabetLetterHistory.map(item => {
+        const confPercent = Math.round(item.confidence * 100);
+        const confColor = confPercent >= 80 ? '#10b981' : confPercent >= 60 ? '#f59e0b' : '#ef4444';
+        
+        return `
+            <span style="
+                display: inline-block;
+                background: ${confColor};
+                color: white;
+                padding: 8px 12px;
+                border-radius: 8px;
+                font-weight: 600;
+                font-size: 14px;
+                margin: 2px;
+            ">
+                ${item.letter}
+                <small style="opacity: 0.8;">${confPercent}%</small>
+            </span>
+        `;
+    }).join('');
+}
+
+// Clear letter history
+function clearLetterHistory() {
+    alphabetLetterHistory = [];
+    updateLetterHistoryDisplay();
+}
+
+// Scroll to alphabet section
+function scrollToAlphabet() {
+    document.getElementById('alphabet').scrollIntoView({ behavior: 'smooth' });
+}

@@ -81,6 +81,15 @@ except Exception as e:
     print(f"❌ Failed to load PKL model: {e}")
     model = None
 
+# Letter Model Loading
+LETTER_MODEL_FILE = "./pretrained/letter_model.pkl"
+try:
+    letter_model = joblib.load(LETTER_MODEL_FILE)
+    print("✅ Letter PKL Model loaded successfully")
+except Exception as e:
+    print(f"❌ Failed to load Letter PKL model: {e}")
+    letter_model = None
+
 
 
 # Add these utility functions after the model loading:
@@ -274,22 +283,31 @@ def infer_frame():
 
 @app.route('/model-status', methods=['GET'])
 def model_status():
-    # Get model classes if available
-    classes = []
+    # Get gesture model classes
+    gesture_classes = []
     if model is not None and hasattr(model, 'classes_'):
-        classes = model.classes_.tolist()
+        gesture_classes = model.classes_.tolist()
     elif model is not None:
-        classes = ["gesture_class"]  # fallback if classes not available
+        gesture_classes = ["gesture_class"]
+    
+    # Get letter model classes
+    letter_classes = []
+    if letter_model is not None and hasattr(letter_model, 'classes_'):
+        letter_classes = letter_model.classes_.tolist()
+    elif letter_model is not None:
+        letter_classes = ["A", "B", "C"]  # fallback
     
     return jsonify({
         'ml_libraries_available': True,
-        'model_loaded': model is not None,
+        'gesture_model_loaded': model is not None,
+        'letter_model_loaded': letter_model is not None,
         'model_type': '.pkl',
-        'classes': classes,
-        'actions_count': len(classes),
-        'demo_mode': model is None
+        'gesture_classes': gesture_classes,
+        'letter_classes': letter_classes,
+        'gesture_actions_count': len(gesture_classes),
+        'letter_actions_count': len(letter_classes),
+        'demo_mode': model is None and letter_model is None
     })
-
 # Replace the health_check function:
 
 @app.route('/health', methods=['GET'])
@@ -359,6 +377,166 @@ def test_llm():
             'status': 'failed'
         }), 500
 
+
+
+
+def run_letter_inference_on_frame(frame_bgr: np.ndarray):
+    """Run letter model inference on a single BGR frame and return detected letter.
+
+    Returns dict: {detected_letter, confidence, detections: [...], annotated_frame} or None if no detection.
+    """
+    print("🔤 run_letter_inference_on_frame called!")  # Debug print
+    global letter_model
+    if letter_model is None:
+        print("❌ Letter model is None!")  # Debug print
+        raise RuntimeError("Letter model not loaded")
+
+    # Create a new MediaPipe hands instance for each request
+    hands = mp_hands.Hands(max_num_hands=1,  # Letters typically use one hand
+                          min_detection_confidence=0.7,
+                          min_tracking_confidence=0.7)
+
+    try:
+        # Convert BGR to RGB for MediaPipe
+        rgb_frame = cv.cvtColor(frame_bgr, cv.COLOR_BGR2RGB)
+        results = hands.process(rgb_frame)
+
+        # Create a copy of the frame for annotation
+        annotated_frame = frame_bgr.copy()
+
+        if results.multi_hand_landmarks and results.multi_handedness:
+            hand_landmarks = results.multi_hand_landmarks[0]  # Use first hand
+            handedness = results.multi_handedness[0]
+            
+            if handedness.classification[0].score >= 0.7:
+                # Draw hand landmarks
+                mp_drawing.draw_landmarks(
+                    annotated_frame, 
+                    hand_landmarks, 
+                    mp_hands.HAND_CONNECTIONS,
+                    mp_drawing.DrawingSpec(color=(255, 0, 0), thickness=2, circle_radius=2),
+                    mp_drawing.DrawingSpec(color=(0, 255, 255), thickness=2)
+                )
+
+                # Normalize landmarks for letter model
+                norm = normalize_landmarks(hand_landmarks.landmark)
+                features = np.array([norm])
+
+                # Predict letter
+                pred = letter_model.predict(features)[0]
+                print(f"🔤 Predicted letter: {pred}")  # Debug print
+
+                if hasattr(letter_model, "predict_proba"):
+                    proba = letter_model.predict_proba(features).max()
+                    confidence = float(proba)
+                    text = f"Letter: {pred} ({confidence:.2f})"
+                    print(f"🔤 Confidence: {confidence:.2f}")  # Debug print
+                else:
+                    confidence = 1.0
+                    text = f"Letter: {pred}"
+                    print(f"🔤 No probability available, using confidence: 1.0")  # Debug print
+
+                # Add text overlay
+                cv.putText(annotated_frame, text, (10, 40),
+                          cv.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 0), 2)
+
+                return {
+                    "detected_letter": pred,
+                    "confidence": confidence,
+                    "detections": [{"class": pred, "confidence": confidence}],
+                    "annotated_frame": annotated_frame
+                }
+
+        return {
+            "detected_letter": None,
+            "confidence": 0.0,
+            "detections": [],
+            "annotated_frame": annotated_frame
+        }
+    finally:
+        hands.close()
+
+@app.route('/test-letter-model', methods=['GET'])
+def test_letter_model():
+    """Test if letter model is loaded and working"""
+    try:
+        if letter_model is None:
+            return jsonify({
+                'status': 'error',
+                'message': 'Letter model not loaded'
+            }), 503
+            
+        # Test with dummy data
+        import numpy as np
+        dummy_features = np.zeros((1, 63))  # 21 landmarks * 3 coordinates
+        pred = letter_model.predict(dummy_features)[0]
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'Letter model is working',
+            'dummy_prediction': str(pred),
+            'model_type': str(type(letter_model))
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@app.route('/infer-letter', methods=['POST'])
+def infer_letter():
+    """Accept a single image frame and return letter detection JSON with optional annotated frame."""
+    print("🔤 /infer-letter endpoint called!")  # Debug print
+    t0 = time.time()
+    try:
+        if letter_model is None:
+            return jsonify({
+                'error': 'Letter model not loaded',
+                'model_loaded': False
+            }), 503
+
+        if 'frame' not in request.files:
+            return jsonify({'error': 'No frame provided (expect form-data field "frame")'}), 400
+
+        file = request.files['frame']
+        if file.mimetype not in ALLOWED_IMAGE_MIME:
+            return jsonify({'error': f'Unsupported content type: {file.mimetype}'}), 415
+
+        # Read image bytes into numpy array
+        file_bytes = np.frombuffer(file.read(), np.uint8)
+        frame = cv.imdecode(file_bytes, cv.IMREAD_COLOR)
+        if frame is None:
+            return jsonify({'error': 'Could not decode image'}), 415
+
+        t1 = time.time()
+        result = run_letter_inference_on_frame(frame)
+        t2 = time.time()
+
+        # Check if client wants annotated frame
+        return_annotated = request.form.get('return_annotated', 'false').lower() == 'true'
+        
+        response_data = {
+            'detected_letter': result['detected_letter'],
+            'confidence': result['confidence'],
+            'detections': result['detections'],
+            'timing': {
+                'decode': t1 - t0,
+                'inference': t2 - t1,
+                'total': t2 - t0
+            }
+        }
+
+        if return_annotated and 'annotated_frame' in result:
+            # Encode annotated frame as base64 JPEG
+            import base64
+            _, buffer = cv.imencode('.jpg', result['annotated_frame'])
+            frame_base64 = base64.b64encode(buffer).decode('utf-8')
+            response_data['annotated_frame'] = f"data:image/jpeg;base64,{frame_base64}"
+
+        return jsonify(response_data)
+    except Exception as e:
+        logger.error("/infer-letter error: %s\n%s", str(e), traceback.format_exc())
+        return jsonify({'error': str(e)}), 500
 
 @app.errorhandler(413)
 def too_large(e):
@@ -712,5 +890,5 @@ if __name__ == '__main__':
         print("⚠️ PKL Model failed to load. Endpoints will return 503 for inference.")
 
     print("🌐 Starting Flask server...")
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=True, host='0.0.0.0', port=5000, use_reloader=False)
 
